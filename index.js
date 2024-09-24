@@ -6,7 +6,7 @@ const cors = require("cors");
 const MongoDbConnect = require("./connection");
 const fileUpload = require("express-fileupload");
 require("dotenv").config();
-const port = 8080;
+const port = process.env.PORT;
 MongoDbConnect();
 
 const cityRoutes = require("./routes/cityRoutes");
