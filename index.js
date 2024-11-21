@@ -21,6 +21,10 @@ const bdeRoutes = require("./routes/bdeRoutes");
 const userRoutes = require("./routes/userRoutes");
 const authRoutes = require("./routes/authRoutes");
 const waimageRoutes = require("./routes/waimageRoutes");
+const webSiteLeadsRoutes = require("./routes/webSiteLeadsRoutes");
+const blogRoutes = require("./routes/blogRoutes");
+const careerJobPostRoutes = require("./routes/careerJobPostRoutes");
+const applicationRoutes = require("./routes/applicationRoutes");
 
 app.use(cors());
 
@@ -47,6 +51,10 @@ app.use("/api/bde", bdeRoutes);
 app.use("/api", userRoutes);
 app.use("/api", authRoutes);
 app.use("/api/waimage", waimageRoutes);
+app.use("/api/websiteleads", webSiteLeadsRoutes);
+app.use("/api/blogs", blogRoutes);
+app.use("/api/jobpost", careerJobPostRoutes);
+app.use("/api/applications", applicationRoutes);
 
 app.listen(port, () => {
   console.log(`Port starts on  ${port}`);
