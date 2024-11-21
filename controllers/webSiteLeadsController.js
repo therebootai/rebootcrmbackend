@@ -55,53 +55,51 @@ exports.getWebsiteLeads = async (req, res) => {
       startDate,
       endDate,
     } = req.query;
-
-    // Convert page and limit to integers
     const pageInt = parseInt(page, 10);
     const limitInt = parseInt(limit, 10);
-
-    // Build query object dynamically
     let query = {};
 
-    // Search by name or mobileNumber
     if (search) {
       query.$or = [
-        { name: { $regex: search, $options: "i" } }, // Case-insensitive search for name
-        { mobileNumber: { $regex: search, $options: "i" } }, // Partial match for mobileNumber
+        { name: { $regex: search, $options: "i" } },
+        { mobileNumber: { $regex: search, $options: "i" } },
       ];
     }
-
-    // Filter by consultationFor
     if (consultationFor) {
       query.consultationFor = consultationFor;
     }
 
-    // Filter by status
     if (status) {
       query.status = status;
     }
 
-    // Filter by date range
     if (startDate || endDate) {
+      const start = startDate ? new Date(startDate) : null;
+      const end = endDate ? new Date(endDate) : null;
+
       query.createdAt = {};
-      if (startDate) query.createdAt.$gte = new Date(startDate);
-      if (endDate) query.createdAt.$lte = new Date(endDate);
+
+      if (start) {
+        query.createdAt.$gte = new Date(start.setHours(0, 0, 0, 0));
+      }
+
+      if (end) {
+        query.createdAt.$lt = new Date(end.setHours(23, 59, 59, 999));
+      } else if (!end && start) {
+        query.createdAt.$lt = new Date(start.setHours(23, 59, 59, 999));
+      }
     }
 
-    // Get total count of leads matching the query
     const totalLeads = await websiteLeads.countDocuments(query);
 
-    // Fetch leads with pagination
     const leadsData = await websiteLeads
       .find(query)
       .skip((pageInt - 1) * limitInt)
       .limit(limitInt)
-      .sort({ createdAt: -1 }); // Sort by createdAt (latest first)
+      .sort({ createdAt: -1 });
 
-    // Calculate total pages
     const totalPages = Math.ceil(totalLeads / limitInt);
 
-    // Return response
     res.status(200).json({
       success: true,
       data: leadsData,
