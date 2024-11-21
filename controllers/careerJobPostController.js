@@ -103,8 +103,17 @@ exports.getJobPosts = async (req, res) => {
 // Get unique job roles for dropdown
 exports.getJobRolesDropdown = async (req, res) => {
   try {
-    // Fetch distinct job roles
-    const jobRoles = await CareerJobPost.distinct("jobrole");
+    // Extract query parameter to filter active/inactive roles
+    const { active } = req.query;
+
+    let query = {};
+    if (active === "true") {
+      query.active = true; // Fetch only active job roles
+    } else if (active === "false") {
+      query.active = false; // Fetch only inactive job roles
+    }
+    // Fetch distinct job roles based on the active status
+    const jobRoles = await CareerJobPost.find(query).distinct("jobrole");
 
     res.status(200).json({
       message: "Job roles fetched successfully",
