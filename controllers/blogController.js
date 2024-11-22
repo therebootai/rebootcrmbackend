@@ -172,7 +172,7 @@ exports.getBlogs = async (req, res) => {
 
 exports.getCategoryBlogs = async (req, res) => {
   try {
-    const { category, limit = 5, excludeBlogId } = req.query;
+    const { category, limit = 8, excludeBlogId } = req.query;
 
     if (!category) {
       return res.status(400).json({ message: "Category is required" });
@@ -243,8 +243,8 @@ exports.getRandomCategories = async (req, res) => {
       (category) => category.trim() !== ""
     );
     const randomCategories = filteredCategories
-      .sort(() => 0.5 - Math.random())
-      .slice(0, 5);
+      .sort(() => 0.7 - Math.random())
+      .slice(0, 7);
 
     res.status(200).json({
       message: "Random categories fetched successfully",
