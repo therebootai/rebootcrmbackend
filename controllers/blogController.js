@@ -219,6 +219,30 @@ exports.getBlogById = async (req, res) => {
   }
 };
 
+exports.incrementViewCount = async (req, res) => {
+  try {
+    const { blogId } = req.params;
+
+    // Find the blog by blogId
+    const blog = await Blogs.findOne({ blogId });
+    if (!blog) {
+      return res.status(404).json({ message: "Blog not found" });
+    }
+
+    // Increment the view count
+    blog.viewsCount += 1;
+    await blog.save();
+
+    res.status(200).json({
+      message: "View count incremented successfully",
+      viewsCount: blog.viewsCount,
+    });
+  } catch (error) {
+    console.error("Error incrementing view count:", error.message);
+    res.status(500).json({ message: "Error incrementing view count", error });
+  }
+};
+
 exports.getCategoryDropdown = async (req, res) => {
   try {
     const categories = await Blogs.distinct("category");

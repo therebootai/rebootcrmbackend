@@ -42,6 +42,7 @@ const blogSchema = new mongoose.Schema(
     },
     active: { type: Boolean, default: true },
     isdraft: { type: Boolean, default: false },
+    viewsCount: { type: Number, default: 0 },
   },
   {
     timestamps: true,
