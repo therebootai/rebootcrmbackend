@@ -4,6 +4,8 @@ const businessController = require("../controllers/businessController");
 
 router.post("/create", businessController.createBusiness);
 router.get("/get", businessController.getBusiness);
+router.get("/marketingget", businessController.getBusinessformarketing);
+
 router.get("/getfilter", businessController.getBusinessFilter);
 router.get("/get/:businessId", businessController.getBusinessById);
 router.put("/update/:businessId", businessController.updateBusiness);

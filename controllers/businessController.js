@@ -303,6 +303,72 @@ exports.getBusiness = async (req, res) => {
   }
 };
 
+exports.getBusinessformarketing = async (req, res) => {
+  try {
+    const { category, city, status } = req.query;
+
+    // Build the filter object for selected category, city, and status
+    let filter = {};
+
+    if (category) filter.category = category;
+    if (city) filter.city = city;
+    if (status) filter.status = status;
+
+    // Aggregation pipeline to fetch filtered businesses (with mobile numbers)
+    let aggregationPipeline = [
+      {
+        $match: filter, // Apply the filters (if any)
+      },
+      {
+        $group: {
+          _id: null,
+          categories: { $addToSet: "$category" },
+          cities: { $addToSet: "$city" },
+          statuses: { $addToSet: "$status" },
+          mobileNumbers: { $push: "$mobileNumber" }, // Add mobile numbers to the result
+        },
+      },
+    ];
+
+    // If no filter is applied, just return all unique categories, cities, and statuses without any mobile numbers
+    if (!category && !city && !status) {
+      aggregationPipeline = [
+        {
+          $group: {
+            _id: null,
+            categories: { $addToSet: "$category" },
+            cities: { $addToSet: "$city" },
+            statuses: { $addToSet: "$status" },
+          },
+        },
+      ];
+    }
+
+    // Execute aggregation
+    const result = await business.aggregate(aggregationPipeline);
+
+    if (result.length > 0) {
+      const { categories, cities, statuses, mobileNumbers } = result[0];
+      res.status(200).json({
+        categories,
+        cities,
+        statuses,
+        mobileNumbers: mobileNumbers || [], // Mobile numbers if filters are applied
+      });
+    } else {
+      res.status(200).json({
+        categories: [],
+        cities: [],
+        statuses: [],
+        mobileNumbers: [], // Return empty if no records match
+      });
+    }
+  } catch (error) {
+    console.error("Error fetching filtered businesses:", error.message);
+    res.status(500).json({ error: "Server error" });
+  }
+};
+
 exports.getBusinessFilter = async (req, res) => {
   try {
     const cities = await business.distinct("city");
