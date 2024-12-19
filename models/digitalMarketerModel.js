@@ -15,23 +15,7 @@ const assignCategorySchema = new Schema({
 const assignCitySchema = new Schema({
   city: { type: String },
 });
-const createbusinessSchema = new Schema({
-  businessId: {
-    type: String,
-    unique: true,
-    required: true,
-  },
-  buisnessname: { type: String, required: true },
-  contactpersonName: { type: String },
-  mobileNumber: { type: String, required: true, unique: true },
-  city: { type: String, required: true },
-  category: { type: String, required: true },
-  status: { type: String, required: true },
-  followUpDate: { type: String },
-  source: { type: String, required: true },
-  remarks: { type: String },
-  createdAt: { type: Date, default: Date.now },
-});
+
 const digitalmarketerSchema = new Schema({
   digitalMarketerId: {
     type: String,
@@ -44,7 +28,7 @@ const digitalmarketerSchema = new Schema({
   password: { type: String, required: true },
   status: { type: String, default: "active" },
   targets: [targetSchema],
-  createdBusiness: { type: [createbusinessSchema], default: [] },
+
   assignCategories: { type: [assignCategorySchema], default: [] },
   assignCities: { type: [assignCitySchema], default: [] },
 });

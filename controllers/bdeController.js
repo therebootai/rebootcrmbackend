@@ -44,7 +44,7 @@ exports.createBDE = async (req, res) => {
       newBDE,
     });
   } catch (error) {
-    console.error("Error creating Digital Marketer", error.message);
+    console.error("Error creating BDE", error.message);
     if (error.code === 11000) {
       // Duplicate key error
       const field = Object.keys(error.keyPattern)[0];
