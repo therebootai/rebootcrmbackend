@@ -6,6 +6,7 @@ const blogController = require("../controllers/blogController");
 router.post("/create", blogController.createBlog);
 router.get("/get", blogController.getBlogs);
 router.get("/latest", blogController.getCategoryBlogs);
+router.get("/getBySlug/:slug", blogController.getBlogBySlug);
 
 router.get("/get/:blogId", blogController.getBlogById);
 

@@ -1,5 +1,7 @@
 const mongoose = require("mongoose");
 
+const slugify = require("slugify");
+
 const blogSchema = new mongoose.Schema(
   {
     blogId: {
@@ -7,6 +9,7 @@ const blogSchema = new mongoose.Schema(
       unique: true,
       required: true,
     },
+    slug: { type: String, required: true, unique: true },
     blogTitle: {
       type: String,
     },
@@ -48,5 +51,12 @@ const blogSchema = new mongoose.Schema(
     timestamps: true,
   }
 );
+
+blogSchema.pre("save", function (next) {
+  if (!this.slug) {
+    this.slug = slugify(this.blogTitle, { lower: true, strict: true });
+  }
+  next();
+});
 
 module.exports = mongoose.model("Blogs", blogSchema);
