@@ -1,6 +1,7 @@
 const Blogs = require("../models/blogModel");
 const { uploadFile, deleteFile } = require("../middleware/cloudinary");
 const fs = require("fs");
+const slugify = require("slugify");
 
 const generateblogId = async () => {
   const blogs = await Blogs.find({}, { blogId: 1, _id: 0 }).sort({
@@ -71,6 +72,8 @@ exports.createBlog = async (req, res) => {
       throw new Error("Thumbnail is required for published blogs.");
     }
 
+    const slug = slugify(blogTitle, { lower: true, strict: true });
+
     // Prepare the blog data
     const blogData = {
       blogId,
@@ -79,8 +82,9 @@ exports.createBlog = async (req, res) => {
       category: isDraft === "false" ? category : undefined,
       blogThumbnails: isDraft === "false" ? thumbnailDetails : undefined,
       writeBlog: isDraft === "false" ? writeBlog : undefined,
-      active: isDraft === "false", // Set active to true if not a draft
-      isdraft: isDraft === "true", // Set isdraft to true if it's a draft
+      active: isDraft === "false",
+      isdraft: isDraft === "true",
+      slug,
       ...req.body,
     };
 

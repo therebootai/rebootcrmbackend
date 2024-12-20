@@ -53,7 +53,8 @@ const blogSchema = new mongoose.Schema(
 );
 
 blogSchema.pre("save", function (next) {
-  if (!this.slug) {
+  // Only generate a slug if it's not already set and if blogTitle is present
+  if (this.blogTitle && !this.slug) {
     this.slug = slugify(this.blogTitle, { lower: true, strict: true });
   }
   next();
