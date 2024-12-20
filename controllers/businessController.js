@@ -146,6 +146,7 @@ exports.getBusiness = async (req, res) => {
       limit = 20,
       page = 1,
       businessname,
+      appointmentDate,
     } = req.query;
 
     let filter = {};
@@ -209,6 +210,7 @@ exports.getBusiness = async (req, res) => {
       const assignedCities = telecaller.assignCities.map((c) => c.city);
 
       applyCategoryCityFilter(assignedCategories, assignedCities);
+      // filter.telecallerId = telecallerId;
     }
 
     // Digital Marketer-specific filters
@@ -227,6 +229,7 @@ exports.getBusiness = async (req, res) => {
       const assignedCities = digitalMarketer.assignCities.map((c) => c.city);
 
       applyCategoryCityFilter(assignedCategories, assignedCities);
+      // filter.digitalMarketerId = digitalMarketerId;
     }
 
     // BDE-specific filters
@@ -252,6 +255,7 @@ exports.getBusiness = async (req, res) => {
           ],
         });
       }
+      // filter.bdeId = bdeId;
     }
 
     // Apply date range filter for appointmentDate
@@ -266,12 +270,18 @@ exports.getBusiness = async (req, res) => {
       }
     }
 
+    let sort = {};
+    if (appointmentDate === "true") {
+      sort.appointmentDate = -1; // Sort by `appointmentDate` in descending order (most recent first)
+    }
+
     // Pagination: Apply limit and skip
     const skip = (page - 1) * limit;
 
     // Fetch businesses with pagination
     const businesses = await business
       .find(filter)
+      .sort(sort)
       .skip(skip)
       .limit(parseInt(limit));
 
