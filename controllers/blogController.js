@@ -351,6 +351,22 @@ exports.updateBlog = async (req, res) => {
       updatedFields.active = true;
     }
 
+    // Check if the blogTitle has been updated
+    if (blogTitle && blogTitle !== existingBlog.blogTitle) {
+      const newSlug = slugify(blogTitle, { lower: true, strict: true });
+
+      // Ensure the new slug is unique
+      const slugExists = await Blogs.findOne({ slug: newSlug });
+      if (slugExists && slugExists.blogId !== blogId) {
+        return res.status(400).json({
+          message:
+            "Slug already exists for another blog. Try a different title.",
+        });
+      }
+
+      updatedFields.slug = newSlug;
+    }
+
     // Handle new image upload
     if (req.files && req.files.blogThumbnail) {
       const file = req.files.blogThumbnail;
