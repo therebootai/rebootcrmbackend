@@ -312,42 +312,31 @@ exports.assignBusiness = async (req, res) => {
 
 // Remove assigned business (category or city) from Telecaller, Digital Marketer, or BDE
 exports.removeAssignedBusiness = async (req, res) => {
-  const { telecallerId, digitalMarketerId, bdeId } = req.params;
-  const { category, city } = req.body;
-
-  let user;
+  const { telecallerId } = req.params;
 
   try {
-    if (telecallerId) {
-      user = await Telecaller.findOne({ telecallerId });
+    // Find the telecaller by ID
+    const telecaller = await Telecaller.findOne({ telecallerId });
+
+    // If telecaller is not found, return 404
+    if (!telecaller) {
+      return res.status(404).json({ message: "Telecaller not found" });
     }
 
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
+    // Clear both assignCategories and assignCities arrays
+    telecaller.assignCategories = [];
+    telecaller.assignCities = [];
 
-    // Update assignCategories and assignCities arrays separately
-    if (category) {
-      user.assignCategories = user.assignCategories.filter(
-        (assign) => assign.category !== category
-      );
-    }
-
-    if (city) {
-      user.assignCities = user.assignCities.filter(
-        (assign) => assign.city !== city
-      );
-    }
-
-    await user.save();
+    // Save the updated telecaller
+    await telecaller.save();
 
     res.status(200).json({
-      message: "Assigned business removed successfully",
-      assignCategories: user.assignCategories,
-      assignCities: user.assignCities,
+      message: "All assigned businesses and cities removed successfully",
+      assignCategories: telecaller.assignCategories,
+      assignCities: telecaller.assignCities,
     });
   } catch (error) {
-    console.error("Error removing assigned business", error);
+    console.error("Error removing assigned business for telecaller:", error);
     res.status(500).json({ message: "Server error" });
   }
 };

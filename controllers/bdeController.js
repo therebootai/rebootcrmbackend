@@ -308,38 +308,30 @@ exports.assignBusiness = async (req, res) => {
 
 // Remove assigned business (category or city) from a BDE
 exports.removeAssignedBusiness = async (req, res) => {
-  const { bdeId } = req.params;
-  const { category, city } = req.body;
+  const { bdeId } = req.params; // Extract bdeId from request parameters
 
   try {
+    // Find the BDE by bdeId
     const bde = await BDE.findOne({ bdeId });
 
     if (!bde) {
       return res.status(404).json({ message: "BDE not found" });
     }
 
-    // Remove category and/or city
-    if (category) {
-      bde.assignCategories = bde.assignCategories.filter(
-        (assign) => assign.category !== category
-      );
-    }
+    // Clear both assignCategories and assignCities
+    bde.assignCategories = [];
+    bde.assignCities = [];
 
-    if (city) {
-      bde.assignCities = bde.assignCities.filter(
-        (assign) => assign.city !== city
-      );
-    }
-
+    // Save the updated BDE to the database
     await bde.save();
 
     res.status(200).json({
-      message: "Assigned business removed successfully",
+      message: "Assigned categories and cities removed successfully",
       assignCategories: bde.assignCategories,
       assignCities: bde.assignCities,
     });
   } catch (error) {
-    console.error("Error removing assigned business from BDE", error);
-    res.status(500).json({ message: "Server error" });
+    console.error("Error removing assigned business for BDE:", error);
+    res.status(500).json({ message: "Server error", error });
   }
 };

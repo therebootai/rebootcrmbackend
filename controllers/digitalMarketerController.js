@@ -336,41 +336,31 @@ exports.assignBusiness = async (req, res) => {
 // Remove assigned business (category or city) from a Digital Marketer
 exports.removeAssignedBusiness = async (req, res) => {
   const { digitalMarketerId } = req.params;
-  const { category, city } = req.body;
 
   try {
-    const DigitalMarketer = await digitalMarketer.findOne({
+    // Find the Digital Marketer by ID
+    const digitalMarketer = await digitalMarketer.findOne({
       digitalMarketerId,
     });
 
-    if (!DigitalMarketer) {
+    if (!digitalMarketer) {
       return res.status(404).json({ message: "Digital Marketer not found" });
     }
 
-    // Remove category and/or city
-    if (category) {
-      DigitalMarketer.assignCategories =
-        DigitalMarketer.assignCategories.filter(
-          (assign) => assign.category !== category
-        );
-    }
+    digitalMarketer.assignCategories = [];
+    digitalMarketer.assignCities = [];
 
-    if (city) {
-      DigitalMarketer.assignCities = DigitalMarketer.assignCities.filter(
-        (assign) => assign.city !== city
-      );
-    }
-
-    await DigitalMarketer.save();
+    // Save the updated document
+    await digitalMarketer.save();
 
     res.status(200).json({
       message: "Assigned business removed successfully",
-      assignCategories: DigitalMarketer.assignCategories,
-      assignCities: DigitalMarketer.assignCities,
+      assignCategories: digitalMarketer.assignCategories,
+      assignCities: digitalMarketer.assignCities,
     });
   } catch (error) {
     console.error(
-      "Error removing assigned business from Digital Marketer",
+      "Error removing assigned business for Digital Marketer:",
       error
     );
     res.status(500).json({ message: "Server error" });
