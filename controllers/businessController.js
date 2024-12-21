@@ -250,13 +250,13 @@ exports.getBusiness = async (req, res) => {
 
       const bdeAssignedCities = bde.assignCities.map((c) => c.city.trim());
 
-      if (!filter.$and) filter.$and = [];
+      // Temporary array to hold $and conditions
+      const andConditions = [];
 
       if (byTagAppointment === "true") {
         // If tagAppointment is specified, include businesses with tagAppointment
         if (bdeAssignedCategories.length > 0) {
-          // Include both tagAppointment and assigned categories using $or
-          filter.$and.push({
+          andConditions.push({
             $or: [
               { tagAppointment: bdeId },
               { category: { $in: bdeAssignedCategories } },
@@ -269,25 +269,43 @@ exports.getBusiness = async (req, res) => {
       } else {
         // Only apply assigned categories and cities if byTagAppointment is not specified
         if (bdeAssignedCategories.length > 0) {
-          filter.category = { $in: bdeAssignedCategories };
+          andConditions.push({ category: { $in: bdeAssignedCategories } });
         }
 
         if (bdeAssignedCities.length > 0) {
-          filter.city = { $in: bdeAssignedCities };
+          andConditions.push({ city: { $in: bdeAssignedCities } });
         }
+      }
+
+      // Only assign $and to the filter if there are valid conditions
+      if (andConditions.length > 0) {
+        filter.$and = andConditions;
       }
     }
 
-    // Apply date range filter for appointmentDate
     if (startDate || endDate) {
-      filter.appointmentDate = {};
+      const dateFilter = {};
 
       if (startDate) {
-        filter.appointmentDate.$gte = new Date(startDate);
+        const start = new Date(startDate);
+        dateFilter.$gte = new Date(
+          start.getTime() - start.getTimezoneOffset() * 60000
+        ); // Normalize to UTC
       }
       if (endDate) {
-        filter.appointmentDate.$lte = new Date(endDate);
+        const endDateAdjusted = new Date(endDate);
+        endDateAdjusted.setUTCHours(23, 59, 59, 999); // Include the full day
+        dateFilter.$lte = new Date(
+          endDateAdjusted.getTime() -
+            endDateAdjusted.getTimezoneOffset() * 60000
+        ); // Normalize to UTC
       }
+
+      // Apply the date filter to both fields
+      filter.$or = [
+        { appointmentDate: dateFilter },
+        { followUpDate: dateFilter },
+      ];
     }
 
     let sort = {};
