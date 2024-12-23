@@ -215,6 +215,27 @@ exports.getBusiness = async (req, res) => {
 
       applyCategoryCityFilter(assignedCategories, assignedCities);
       // filter.telecallerId = telecallerId;
+      if (startDate || endDate) {
+        // Normalize startDate to the beginning of the day in UTC
+        const start = startDate ? new Date(startDate) : null;
+        if (start) {
+          start.setUTCHours(0, 0, 0, 0);
+        }
+
+        // Normalize endDate to the end of the day in UTC
+        let end = endDate ? new Date(endDate) : null;
+        if (end) {
+          end.setUTCHours(23, 59, 59, 999);
+        }
+
+        if (start && end) {
+          filter.followUpDate = { $gte: start, $lte: end };
+        } else if (start) {
+          filter.followUpDate = { $gte: start };
+        } else if (end) {
+          filter.followUpDate = { $lte: end };
+        }
+      }
     }
 
     // Digital Marketer-specific filters
@@ -281,31 +302,6 @@ exports.getBusiness = async (req, res) => {
       if (andConditions.length > 0) {
         filter.$and = andConditions;
       }
-    }
-
-    if (startDate || endDate) {
-      const dateFilter = {};
-
-      if (startDate) {
-        const start = new Date(startDate);
-        dateFilter.$gte = new Date(
-          start.getTime() - start.getTimezoneOffset() * 60000
-        ); // Normalize to UTC
-      }
-      if (endDate) {
-        const endDateAdjusted = new Date(endDate);
-        endDateAdjusted.setUTCHours(23, 59, 59, 999); // Include the full day
-        dateFilter.$lte = new Date(
-          endDateAdjusted.getTime() -
-            endDateAdjusted.getTimezoneOffset() * 60000
-        ); // Normalize to UTC
-      }
-
-      // Apply the date filter to both fields
-      filter.$or = [
-        { appointmentDate: dateFilter },
-        { followUpDate: dateFilter },
-      ];
     }
 
     let sort = {};

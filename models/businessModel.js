@@ -13,7 +13,7 @@ const businessSchema = new Schema({
   city: { type: String, required: true },
   category: { type: String, required: true },
   status: { type: String, required: true },
-  followUpDate: { type: String },
+  followUpDate: { type: Date },
   source: { type: String, required: true },
   remarks: { type: String },
   telecallerId: { type: String },
