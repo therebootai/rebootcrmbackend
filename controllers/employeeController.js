@@ -91,7 +91,19 @@ exports.createEmployee = async (req, res) => {
       .status(201)
       .json({ message: "Employee created successfully", newEmployee });
   } catch (error) {
-    console.error("Error creating Employee", error.message || error);
+    console.error("Error creating Employee:", error.message || error);
+
+    if (error.code === 11000) {
+      // Duplicate key error
+      if (error.keyPattern && error.keyPattern.mobileNumber) {
+        return res.status(400).json({ error: "Mobile number already exists" });
+      } else if (error.keyPattern && error.keyPattern.emergencyNumber) {
+        return res
+          .status(400)
+          .json({ error: "Emergency mobile number already exists" });
+      }
+    }
+
     res.status(500).json({ error: "Server error" });
   }
 };
