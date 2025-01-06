@@ -86,7 +86,6 @@ exports.createBusiness = async (req, res) => {
       const telecaller = await Telecaller.findOne({ telecallerId });
 
       if (telecaller) {
-        telecaller.createdBusiness.push(newBusiness);
         await telecaller.save();
       } else {
         return res.status(404).json({ message: "Telecaller not found" });
@@ -98,7 +97,6 @@ exports.createBusiness = async (req, res) => {
       });
 
       if (digitalMarketer) {
-        digitalMarketer.createdBusiness.push(newBusiness);
         await digitalMarketer.save();
       } else {
         return res.status(404).json({ message: "digitalMarketer not found" });
@@ -110,7 +108,6 @@ exports.createBusiness = async (req, res) => {
       });
 
       if (bdes) {
-        bdes.createdBusiness.push(newBusiness);
         await bdes.save();
       } else {
         return res.status(404).json({ message: "bde not found" });
@@ -197,6 +194,7 @@ exports.getBusiness = async (req, res) => {
     applyCategoryCityFilter([], []);
 
     // Telecaller-specific filters
+    // Telecaller-specific filters
     if (telecallerId) {
       const telecaller = await Telecaller.findOne({ telecallerId });
 
@@ -207,35 +205,25 @@ exports.getBusiness = async (req, res) => {
       const assignedCategories = telecaller.assignCategories.map((c) =>
         c.category.trim()
       );
-      filter.category = {
-        $in: assignedCategories.map((cat) => new RegExp(`^${cat}$`, "i")),
-      };
+      const assignedCities = telecaller.assignCities.map((c) => c.city.trim());
 
-      const assignedCities = telecaller.assignCities.map((c) => c.city);
+      const orConditions = [];
 
-      applyCategoryCityFilter(assignedCategories, assignedCities);
-      // filter.telecallerId = telecallerId;
-      if (startDate || endDate) {
-        // Normalize startDate to the beginning of the day in UTC
-        const start = startDate ? new Date(startDate) : null;
-        if (start) {
-          start.setUTCHours(0, 0, 0, 0);
-        }
+      // Include businesses with the matching telecaller ID
+      orConditions.push({ telecallerId });
 
-        // Normalize endDate to the end of the day in UTC
-        let end = endDate ? new Date(endDate) : null;
-        if (end) {
-          end.setUTCHours(23, 59, 59, 999);
-        }
-
-        if (start && end) {
-          filter.followUpDate = { $gte: start, $lte: end };
-        } else if (start) {
-          filter.followUpDate = { $gte: start };
-        } else if (end) {
-          filter.followUpDate = { $lte: end };
-        }
+      // Include businesses with matching categories or cities if applicable
+      if (assignedCategories.length > 0) {
+        orConditions.push({ category: { $in: assignedCategories } });
       }
+
+      if (assignedCities.length > 0) {
+        orConditions.push({ city: { $in: assignedCities } });
+      }
+
+      // Apply the OR condition to the filter
+      if (!filter.$or) filter.$or = [];
+      filter.$or.push(...orConditions);
     }
 
     // Digital Marketer-specific filters
@@ -268,46 +256,46 @@ exports.getBusiness = async (req, res) => {
       const bdeAssignedCategories = bde.assignCategories.map((c) =>
         c.category.trim()
       );
-
       const bdeAssignedCities = bde.assignCities.map((c) => c.city.trim());
 
-      // Temporary array to hold $and conditions
-      const andConditions = [];
+      const orConditions = [];
+
+      // Include businesses with the matching BDE ID
+      orConditions.push({ bdeId });
 
       if (byTagAppointment === "true") {
-        // If tagAppointment is specified, include businesses with tagAppointment
         if (bdeAssignedCategories.length > 0) {
-          andConditions.push({
+          orConditions.push({
             $or: [
               { tagAppointment: bdeId },
               { category: { $in: bdeAssignedCategories } },
             ],
           });
         } else {
-          // If no categories are assigned, only filter by tagAppointment
-          filter.tagAppointment = bdeId;
+          orConditions.push({ tagAppointment: bdeId });
         }
       } else {
-        // Only apply assigned categories and cities if byTagAppointment is not specified
+        // Include assigned categories and cities
         if (bdeAssignedCategories.length > 0) {
-          andConditions.push({ category: { $in: bdeAssignedCategories } });
+          orConditions.push({ category: { $in: bdeAssignedCategories } });
         }
 
         if (bdeAssignedCities.length > 0) {
-          andConditions.push({ city: { $in: bdeAssignedCities } });
+          orConditions.push({ city: { $in: bdeAssignedCities } });
         }
       }
 
-      // Only assign $and to the filter if there are valid conditions
-      if (andConditions.length > 0) {
-        filter.$and = andConditions;
-      }
+      // Apply the OR condition to the filter
+      if (!filter.$or) filter.$or = [];
+      filter.$or.push(...orConditions);
     }
 
     let sort = {};
     sort = { tagAppointment: -1 };
     if (appointmentDate === "true") {
-      sort.appointmentDate = -1; // Sort by `appointmentDate` in descending order (most recent first)
+      sort.appointmentDate = -1;
+    } else {
+      sort.createdAt = -1;
     }
 
     // Pagination: Apply limit and skip
@@ -424,6 +412,7 @@ exports.getBusinessFilter = async (req, res) => {
 
     if (telecallerId || bdeId || digitalMarketerId) {
       let assignedCategories = [];
+      let addedCategories = [];
       let tagAppointmentCategories = [];
 
       // Determine assigned categories based on the user role
@@ -435,6 +424,9 @@ exports.getBusinessFilter = async (req, res) => {
         assignedCategories = telecaller.assignCategories.map((c) =>
           c.category.trim()
         );
+        addedCategories = await business.distinct("category", {
+          telecallerId,
+        });
       } else if (bdeId) {
         const bde = await BDE.findOne({ bdeId });
         if (!bde) {
@@ -444,6 +436,7 @@ exports.getBusinessFilter = async (req, res) => {
         tagAppointmentCategories = await business.distinct("category", {
           tagAppointment: bdeId,
         });
+        addedCategories = await business.distinct("category", { bdeId });
       } else if (digitalMarketerId) {
         const digitalMarketer = await DigitalMarketer.findOne({
           digitalMarketerId,
@@ -456,10 +449,17 @@ exports.getBusinessFilter = async (req, res) => {
         assignedCategories = digitalMarketer.assignCategories.map((c) =>
           c.category.trim()
         );
+        addedCategories = await business.distinct("category", {
+          digitalMarketerId,
+        });
       }
 
       const allCategories = Array.from(
-        new Set([...assignedCategories, ...tagAppointmentCategories])
+        new Set([
+          ...assignedCategories,
+          ...addedCategories,
+          ...tagAppointmentCategories,
+        ])
       );
 
       if (allCategories.length > 0) {

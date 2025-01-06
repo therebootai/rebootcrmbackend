@@ -6,7 +6,7 @@ const generatebdeId = async () => {
     bdeId: 1,
   });
   const bdeIds = bdes.map((bde) =>
-    parseInt(bde.bdeId.replace("bdeId", ""), 10)
+    parseInt(bde.bdeId.split("-")[0].replace("bdeid", ""), 10)
   );
 
   let bdeId = 1;
@@ -17,7 +17,15 @@ const generatebdeId = async () => {
     bdeId++;
   }
 
-  return `bdeId${String(bdeId).padStart(4, "0")}`;
+  const now = new Date();
+  const date = `${String(now.getDate()).padStart(2, "0")}${String(
+    now.getMonth() + 1
+  ).padStart(2, "0")}${now.getFullYear()}`;
+  const time = `${String(now.getHours()).padStart(2, "0")}${String(
+    now.getMinutes()
+  ).padStart(2, "0")}`;
+
+  return `bdeid${String(bdeId).padStart(4, "0")}-${date}${time}`;
 };
 
 // create Telecaller

@@ -1,5 +1,6 @@
 const Telecaller = require("../models/telecallerModel");
 const bcrypt = require("bcryptjs");
+
 const generateTelecallerId = async () => {
   const telecallers = await Telecaller.find(
     {},
@@ -7,8 +8,12 @@ const generateTelecallerId = async () => {
   ).sort({
     telecallerId: 1,
   });
+
   const telecallerIds = telecallers.map((telecaller) =>
-    parseInt(telecaller.telecallerId.replace("telecallerId", ""), 10)
+    parseInt(
+      telecaller.telecallerId.split("-")[0].replace("telecallerId", ""),
+      10
+    )
   );
 
   let telecallerId = 1;
@@ -19,7 +24,15 @@ const generateTelecallerId = async () => {
     telecallerId++;
   }
 
-  return `telecallerId${String(telecallerId).padStart(4, "0")}`;
+  const now = new Date();
+  const date = `${String(now.getDate()).padStart(2, "0")}${String(
+    now.getMonth() + 1
+  ).padStart(2, "0")}${now.getFullYear()}`;
+  const time = `${String(now.getHours()).padStart(2, "0")}${String(
+    now.getMinutes()
+  ).padStart(2, "0")}`;
+
+  return `telecallerId${String(telecallerId).padStart(4, "0")}-${date}${time}`;
 };
 
 // create Telecaller
