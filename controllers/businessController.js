@@ -148,22 +148,14 @@ exports.getBusiness = async (req, res) => {
 
     let filter = {};
 
-    // Apply basic filters
-    // Apply mobile number search filter with regex (for partial matching)
     if (mobileNumber) {
       filter.mobileNumber = { $regex: mobileNumber, $options: "i" };
-      // $options: "i" makes it case-insensitive
     }
 
     if (businessname) {
-      // const normalizedBusinessName = businessname
-      //   .toLowerCase() // Convert to lowercase
-      //   .replace(/[-\/"",]/g, "") // Remove special characters
-      //   .replace(/\s+/g, ""); // Remove all spaces
-
       filter.buisnessname = {
         $regex: businessname,
-        $options: "i", // Case-insensitive
+        $options: "i",
       };
     }
 
@@ -179,7 +171,6 @@ exports.getBusiness = async (req, res) => {
           ? { city: { $in: city ? [city] : cities } }
           : null;
 
-      // Only add $and if either filter is present
       const andConditions = [];
       if (categoryFilter) andConditions.push(categoryFilter);
       if (cityFilter) andConditions.push(cityFilter);
@@ -190,10 +181,8 @@ exports.getBusiness = async (req, res) => {
       }
     };
 
-    // Apply category and city filters from general query parameters
     applyCategoryCityFilter([], []);
 
-    // Telecaller-specific filters
     // Telecaller-specific filters
     if (telecallerId) {
       const telecaller = await Telecaller.findOne({ telecallerId });
@@ -209,10 +198,8 @@ exports.getBusiness = async (req, res) => {
 
       const orConditions = [];
 
-      // Include businesses with the matching telecaller ID
       orConditions.push({ telecallerId });
 
-      // Include businesses with matching categories or cities if applicable
       if (assignedCategories.length > 0) {
         orConditions.push({ category: { $in: assignedCategories } });
       }
@@ -221,7 +208,6 @@ exports.getBusiness = async (req, res) => {
         orConditions.push({ city: { $in: assignedCities } });
       }
 
-      // Apply the OR condition to the filter
       if (!filter.$or) filter.$or = [];
       filter.$or.push(...orConditions);
     }
@@ -312,9 +298,16 @@ exports.getBusiness = async (req, res) => {
     const totalCount = await business.countDocuments(filter);
     const totalPages = Math.ceil(totalCount / limit);
 
-    const FollowupCount = await business.countDocuments({ status: "Followup" });
-    const visitCount = await business.countDocuments({ status: "Visit" });
+    const FollowupCount = await business.countDocuments({
+      ...filter,
+      status: "Followup",
+    });
+    const visitCount = await business.countDocuments({
+      ...filter,
+      status: "Appointment Generated",
+    });
     const dealCloseCount = await business.countDocuments({
+      ...filter,
       status: "Deal Closed",
     });
 
