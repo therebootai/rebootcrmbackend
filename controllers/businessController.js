@@ -138,8 +138,8 @@ exports.getBusiness = async (req, res) => {
       bdeId,
       byTagAppointment,
       digitalMarketerId,
-      startDate,
-      endDate,
+      followupstartdate,
+      followupenddate,
       limit = 20,
       page = 1,
       businessname,
@@ -160,6 +160,22 @@ exports.getBusiness = async (req, res) => {
     }
 
     if (status) filter.status = status;
+
+    if (followupstartdate && followupenddate) {
+      const startDate = new Date(followupstartdate); // Parse start date
+      const endDate = new Date(followupenddate); // Parse end date
+      endDate.setUTCHours(23, 59, 59, 999); // Set the end date to the end of the day
+
+      // Add the followUpDate range filter
+      filter.followUpDate = { $gte: startDate, $lte: endDate };
+    } else if (followupstartdate) {
+      const startDate = new Date(followupstartdate);
+      filter.followUpDate = { $gte: startDate };
+    } else if (followupenddate) {
+      const endDate = new Date(followupenddate);
+      endDate.setUTCHours(23, 59, 59, 999);
+      filter.followUpDate = { $lte: endDate };
+    }
 
     const applyCategoryCityFilter = (categories = [], cities = []) => {
       const categoryFilter =

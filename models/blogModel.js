@@ -26,13 +26,13 @@ const blogSchema = new mongoose.Schema(
       secure_url: {
         type: String,
         required: function () {
-          return !this.isdraft; // Required only if it's not a draft
+          return !this.isdraft;
         },
       },
       public_id: {
         type: String,
         required: function () {
-          return !this.isdraft; // Required only if it's not a draft
+          return !this.isdraft;
         },
       },
     },
