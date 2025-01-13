@@ -140,11 +140,17 @@ exports.getBusiness = async (req, res) => {
       digitalMarketerId,
       followupstartdate,
       followupenddate,
-      limit = 20,
-      page = 1,
+      appointmentstartdate,
+      appointmentenddate,
+      createdstartdate,
+      createdenddate,
       businessname,
       appointmentDate,
     } = req.query;
+
+    const limit =
+      parseInt(req.query.limit) > 0 ? parseInt(req.query.limit) : 20;
+    const page = parseInt(req.query.page) > 0 ? parseInt(req.query.page) : 1;
 
     let filter = {};
 
@@ -175,6 +181,36 @@ exports.getBusiness = async (req, res) => {
       const endDate = new Date(followupenddate);
       endDate.setUTCHours(23, 59, 59, 999);
       filter.followUpDate = { $lte: endDate };
+    }
+
+    if (appointmentstartdate && appointmentenddate) {
+      const startDate = new Date(appointmentstartdate);
+      const endDate = new Date(appointmentenddate);
+      endDate.setUTCHours(23, 59, 59, 999);
+
+      filter.appointmentDate = { $gte: startDate, $lte: endDate };
+    } else if (appointmentstartdate) {
+      const startDate = new Date(appointmentstartdate);
+      filter.appointmentDate = { $gte: startDate };
+    } else if (appointmentenddate) {
+      const endDate = new Date(appointmentenddate);
+      endDate.setUTCHours(23, 59, 59, 999);
+      filter.appointmentDate = { $lte: endDate };
+    }
+
+    if (createdstartdate && createdenddate) {
+      const startDate = new Date(createdstartdate);
+      const endDate = new Date(createdenddate);
+      endDate.setUTCHours(23, 59, 59, 999);
+
+      filter.createdAt = { $gte: startDate, $lte: endDate };
+    } else if (createdstartdate) {
+      const startDate = new Date(createdstartdate);
+      filter.createdAt = { $gte: startDate };
+    } else if (createdenddate) {
+      const endDate = new Date(createdenddate);
+      endDate.setUTCHours(23, 59, 59, 999);
+      filter.createdAt = { $lte: endDate };
     }
 
     const applyCategoryCityFilter = (categories = [], cities = []) => {
@@ -301,7 +337,9 @@ exports.getBusiness = async (req, res) => {
     }
 
     // Pagination: Apply limit and skip
-    const skip = (page - 1) * limit;
+
+    const pageNumber = Math.max(1, parseInt(page));
+    const skip = (pageNumber - 1) * parseInt(limit);
 
     // Fetch businesses with pagination
     const businesses = await business
