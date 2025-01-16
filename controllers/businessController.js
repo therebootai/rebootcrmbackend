@@ -159,6 +159,16 @@ exports.getBusiness = async (req, res) => {
       };
     }
 
+    if (startDate || endDate) {
+      filter.followUpDate = {};
+      if (startDate) {
+        filter.followUpDate.$gte = new Date(startDate);
+      }
+      if (endDate) {
+        filter.followUpDate.$lte = new Date(endDate);
+      }
+    }
+
     if (status) filter.status = status;
 
     const applyCategoryCityFilter = (categories = [], cities = []) => {
@@ -475,6 +485,16 @@ exports.getBusinessFilter = async (req, res) => {
       businessCategories = await business.distinct("category");
       status = await business.distinct("status");
     }
+
+    cities.sort((a, b) =>
+      a.localeCompare(b, undefined, { sensitivity: "base" })
+    );
+    businessCategories.sort((a, b) =>
+      a.localeCompare(b, undefined, { sensitivity: "base" })
+    );
+    status.sort((a, b) =>
+      a.localeCompare(b, undefined, { sensitivity: "base" })
+    );
 
     // Respond with unique filter values
     res.status(200).json({ cities, businessCategories, status });
