@@ -165,16 +165,6 @@ exports.getBusiness = async (req, res) => {
       };
     }
 
-    if (startDate || endDate) {
-      filter.followUpDate = {};
-      if (startDate) {
-        filter.followUpDate.$gte = new Date(startDate);
-      }
-      if (endDate) {
-        filter.followUpDate.$lte = new Date(endDate);
-      }
-    }
-
     if (status) filter.status = status;
 
     if (followupstartdate && followupenddate) {
