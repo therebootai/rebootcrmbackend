@@ -45,14 +45,11 @@ exports.createCity = async (req, res) => {
 
 exports.getCity = async (req, res) => {
   try {
-    // Fetch all cities from the database
     let cities = await CityName.find();
 
-    // Apply sorting only if `sorting=true` is present in the query
     if (req.query.sorting === "true") {
-      // Sort cities alphabetically by 'cityname'
       cities = cities.sort((a, b) => {
-        const nameA = a.cityname ? a.cityname.trim() : ""; // Handle null or undefined names
+        const nameA = a.cityname ? a.cityname.trim() : "";
         const nameB = b.cityname ? b.cityname.trim() : "";
         return nameA.localeCompare(nameB, undefined, { sensitivity: "base" });
       });
