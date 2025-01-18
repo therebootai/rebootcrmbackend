@@ -45,8 +45,20 @@ exports.createCity = async (req, res) => {
 
 exports.getCity = async (req, res) => {
   try {
-    const citys = await CityName.find();
-    res.status(200).json(citys);
+    // Fetch all cities from the database
+    let cities = await CityName.find();
+
+    // Apply sorting only if `sorting=true` is present in the query
+    if (req.query.sorting === "true") {
+      // Sort cities alphabetically by 'cityname'
+      cities = cities.sort((a, b) => {
+        const nameA = a.cityname ? a.cityname.trim() : ""; // Handle null or undefined names
+        const nameB = b.cityname ? b.cityname.trim() : "";
+        return nameA.localeCompare(nameB, undefined, { sensitivity: "base" });
+      });
+    }
+
+    res.status(200).json(cities);
   } catch (error) {
     console.error("Error fetching City:", error.message);
     res.status(500).json({ error: "Server error" });

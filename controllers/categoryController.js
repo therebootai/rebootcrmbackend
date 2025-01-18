@@ -47,7 +47,19 @@ exports.createCategory = async (req, res) => {
 
 exports.getCategory = async (req, res) => {
   try {
+    // Fetch all categories from the database
     const categories = await Category.find();
+
+    // Apply sorting only if `sorting=true` is present in the query
+    if (req.query.sorting === "true") {
+      // Sort the categories alphabetically by 'categoryname'
+      categories.sort((a, b) => {
+        const nameA = a.categoryname ? a.categoryname.trim() : ""; // Handle null or undefined names
+        const nameB = b.categoryname ? b.categoryname.trim() : "";
+        return nameA.localeCompare(nameB, undefined, { sensitivity: "base" });
+      });
+    }
+
     res.status(200).json(categories);
   } catch (error) {
     console.error("Error fetching Category:", error.message);
