@@ -255,7 +255,7 @@ exports.loginBde = async (req, res) => {
         name: bdes.bdename,
       },
       process.env.SECRET_KEY,
-      { expiresIn: "1h" }
+      { expiresIn: "30d" }
     );
 
     res.status(200).json({

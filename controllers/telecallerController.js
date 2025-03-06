@@ -265,12 +265,14 @@ exports.loginTelecaller = async (req, res) => {
         name: telecaller.telecallername,
       },
       process.env.SECRET_KEY,
-      { expiresIn: "1h" }
+      { expiresIn: "30d" }
     );
 
-    res
-      .status(200)
-      .json({ telecaller, token, telecallername: telecaller.telecallername });
+    res.status(200).json({
+      telecaller,
+      token,
+      telecallername: telecaller.telecallername,
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
