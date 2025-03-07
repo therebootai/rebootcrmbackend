@@ -122,7 +122,6 @@ exports.sendOtp = async (req, res) => {
       expiresAt: Date.now() + 5 * 60 * 1000,
     };
 
-    // ✅ WhatsApp API payload
     const payload = {
       "auth-key": "aa61059c453fd7b25e02a9dec860e9c4e23834a61d1d26de4b",
       "app-key": "0f71de7c-53dc-4793-9469-96356a6a2e4a",
