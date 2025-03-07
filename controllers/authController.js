@@ -151,6 +151,16 @@ exports.sendOtp = async (req, res) => {
     }
 
     const formattedPhone = phone.startsWith("91") ? phone : "91" + phone;
+
+    let user =
+      (await BDE.findOne({ mobileNumber: phone })) ||
+      (await Telecaller.findOne({ mobileNumber: phone })) ||
+      (await DigitalMarketer.findOne({ mobileNumber: phone }));
+
+    let name = "User"; // Default name
+    if (user) {
+      name = user.bdename || user.telecallername || user.digitalMarketername;
+    }
     const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
 
     otpStorage[formattedPhone] = {
@@ -165,7 +175,7 @@ exports.sendOtp = async (req, res) => {
       template_id: "554597174279371",
       device_id: "67599f6c1c50a6c971f41728",
       language: "en",
-      variables: ["User", otpCode.toString()],
+      variables: [name.toString(), otpCode.toString()],
     };
 
     const response = await axios.post(

@@ -107,13 +107,22 @@ const otpStorage = {};
 
 exports.sendOtp = async (req, res) => {
   try {
-    const { phone, name } = req.body;
+    let { phone, name } = req.body;
 
     if (!phone) {
       return res.status(400).json({ message: "Phone number is required" });
     }
 
     const formattedPhone = phone.startsWith("91") ? phone : "91" + phone;
+
+    if (!name) {
+      const user = await User.findOne({ phone: phone });
+      if (user) {
+        name = user.name;
+      } else {
+        name = "User";
+      }
+    }
 
     const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
 
@@ -129,7 +138,7 @@ exports.sendOtp = async (req, res) => {
       template_id: "554597174279371",
       device_id: "67599f6c1c50a6c971f41728",
       language: "en",
-      variables: ["User", otpCode.toString()],
+      variables: [name.toString(), otpCode.toString()],
     };
 
     const response = await axios.post(
