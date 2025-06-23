@@ -138,6 +138,7 @@ exports.getBusiness = async (req, res) => {
       city,
       category,
       status,
+      source,
       telecallerId,
       bdeId,
       byTagAppointment,
@@ -170,6 +171,8 @@ exports.getBusiness = async (req, res) => {
     }
 
     if (status) filter.status = status;
+
+    if (source) filter.source = source;
 
     if (followupstartdate && followupenddate) {
       const startDate = new Date(followupstartdate); // Parse start date
