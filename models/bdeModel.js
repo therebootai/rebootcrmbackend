@@ -31,6 +31,14 @@ const bdeSchema = new Schema({
 
   assignCategories: { type: [assignCategorySchema], default: [] },
   assignCities: { type: [assignCitySchema], default: [] },
+  attendence_list: [
+    {
+      date: { type: Date, default: Date.now },
+      entry_time: { type: String },
+      exit_time: { type: String },
+      day_count: { type: String },
+    },
+  ],
 });
 
 module.exports = mongoose.model("BDE", bdeSchema);
