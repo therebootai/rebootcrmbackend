@@ -3,7 +3,7 @@ const Telecaller = require("../models/telecallerModel");
 const DigitalMarketer = require("../models/digitalMarketerModel");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-const { default: axios } = require("axios");
+const axios = require("axios");
 
 exports.login = async (req, res) => {
   const { mobileNumber, password } = req.body;
@@ -23,6 +23,31 @@ exports.login = async (req, res) => {
       if (!isMatch) {
         return res.status(400).json({ message: "Invalid credentials" });
       }
+
+      const now = new Date();
+      const today = now.toISOString().split("T")[0];
+      const entryTime = now.toLocaleTimeString("en-US", { hour12: false });
+
+      const existingAttendanceIndex = user.attendence_list.findIndex(
+        (att) => att.date && att.date.toISOString().split("T")[0] === today
+      );
+
+      if (existingAttendanceIndex === -1) {
+        user.attendence_list.push({
+          date: now,
+          entry_time: entryTime,
+          exit_time: "",
+          day_count: "0",
+        });
+      } else {
+        user.attendence_list.push({
+          date: now,
+          entry_time: entryTime,
+          exit_time: "",
+          day_count: "0",
+        });
+      }
+      await user.save(); // Save the updated user document
 
       const token = jwt.sign(
         {
@@ -53,6 +78,32 @@ exports.login = async (req, res) => {
         return res.status(400).json({ message: "Invalid credentials" });
       }
 
+      const now = new Date();
+      const today = now.toISOString().split("T")[0]; // Get YYYY-MM-DD
+      const entryTime = now.toLocaleTimeString("en-US", { hour12: false }); // Get HH:MM:SS
+
+      const existingAttendanceIndex = user.attendence_list.findIndex(
+        (att) => att.date && att.date.toISOString().split("T")[0] === today
+      );
+
+      if (existingAttendanceIndex === -1) {
+        user.attendence_list.push({
+          date: now,
+          entry_time: entryTime,
+          exit_time: "",
+          day_count: "0",
+        });
+      } else {
+        // If you want a new entry for each login on the same day:
+        user.attendence_list.push({
+          date: now,
+          entry_time: entryTime,
+          exit_time: "",
+          day_count: "0",
+        });
+      }
+      await user.save();
+
       const token = jwt.sign(
         {
           id: user._id,
@@ -81,6 +132,32 @@ exports.login = async (req, res) => {
       if (!isMatch) {
         return res.status(400).json({ message: "Invalid credentials" });
       }
+
+      const now = new Date();
+      const today = now.toISOString().split("T")[0]; // Get YYYY-MM-DD
+      const entryTime = now.toLocaleTimeString("en-US", { hour12: false }); // Get HH:MM:SS
+
+      const existingAttendanceIndex = user.attendence_list.findIndex(
+        (att) => att.date && att.date.toISOString().split("T")[0] === today
+      );
+
+      if (existingAttendanceIndex === -1) {
+        user.attendence_list.push({
+          date: now,
+          entry_time: entryTime,
+          exit_time: "",
+          day_count: "0",
+        });
+      } else {
+        // If you want a new entry for each login on the same day:
+        user.attendence_list.push({
+          date: now,
+          entry_time: entryTime,
+          exit_time: "",
+          day_count: "0",
+        });
+      }
+      await user.save();
 
       const token = jwt.sign(
         {
@@ -309,5 +386,19 @@ exports.resetPassword = async (req, res) => {
   } catch (error) {
     console.error("Error resetting password:", error);
     return res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+exports.checkAuth = async (req, res) => {
+  try {
+    const token = req.headers.authorization.split(" ")[1];
+    if (!token) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    const decoded = jwt.verify(token, process.env.SECRET_KEY);
+    let user;
+  } catch (error) {
+    console.error("Error checking authentication:", error);
+    res.status(500).json({ message: "Internal server error" });
   }
 };

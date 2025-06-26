@@ -60,6 +60,8 @@ exports.createBusiness = async (req, res) => {
       digitalMarketerId,
       bdeId,
       remarks,
+      createdBy,
+      creatorModel,
     } = req.body;
 
     const businessId = await generatebusinessId();
@@ -78,6 +80,8 @@ exports.createBusiness = async (req, res) => {
       telecallerId: telecallerId || null,
       digitalMarketerId: digitalMarketerId || null,
       bdeId: bdeId || null,
+      createdBy,
+      creatorModel,
     });
 
     await newBusiness.save();
