@@ -24,6 +24,11 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
+  created_business: {
+    type: [mongoose.Types.ObjectId],
+    default: [],
+    ref: "business",
+  },
 });
 
 // Pre-save middleware to hash password

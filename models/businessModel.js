@@ -23,16 +23,6 @@ const businessSchema = new Schema({
   tagAppointment: {
     type: String,
   },
-  createdBy: {
-    type: Schema.Types.ObjectId,
-    required: true,
-    refPath: "creatorModel", // This is the key: dynamically refers to the model based on 'creatorModel' field
-  },
-  creatorModel: {
-    type: String,
-    required: true,
-    enum: ["User", "Telecaller", "BDE", "digitalMarketer"], // Define the possible models
-  },
   appointmentDate: {
     type: Date,
   },

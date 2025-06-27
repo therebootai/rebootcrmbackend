@@ -1,3 +1,4 @@
+const { default: mongoose } = require("mongoose");
 const Telecaller = require("../models/telecallerModel");
 const bcrypt = require("bcryptjs");
 
@@ -39,8 +40,13 @@ const generateTelecallerId = async () => {
 
 exports.createTelecaller = async (req, res) => {
   try {
-    const { telecallername, mobileNumber, organizationrole, password } =
-      req.body;
+    const {
+      telecallername,
+      mobileNumber,
+      organizationrole,
+      password,
+      employee_ref,
+    } = req.body;
 
     const telecallerId = await generateTelecallerId();
     const salt = await bcrypt.genSalt(10);
@@ -52,6 +58,7 @@ exports.createTelecaller = async (req, res) => {
       mobileNumber,
       organizationrole,
       password: hashedPassword,
+      employee_ref,
     });
 
     await newTelecaller.save();
@@ -81,7 +88,7 @@ exports.createTelecaller = async (req, res) => {
 // alll telecaller fetch
 exports.getTelecaller = async (req, res) => {
   try {
-    const telecallers = await Telecaller.find();
+    const telecallers = await Telecaller.find().populate("employee_ref");
     res.status(200).json(telecallers);
   } catch (error) {
     console.error("Error fetching telecallers", error.message);
@@ -121,8 +128,14 @@ exports.deleteTelecaller = async (req, res) => {
 exports.updateTelecaller = async (req, res) => {
   try {
     const { telecallerId } = req.params;
-    const { telecallername, mobileNumber, organizationrole, status, password } =
-      req.body;
+    const {
+      telecallername,
+      mobileNumber,
+      organizationrole,
+      status,
+      password,
+      created_business,
+    } = req.body;
 
     const telecallerUpdate = await Telecaller.findOne({ telecallerId });
     if (!telecallerUpdate) {
@@ -142,6 +155,18 @@ exports.updateTelecaller = async (req, res) => {
     if (password) {
       const salt = await bcrypt.genSalt(10);
       telecallerUpdate.password = await bcrypt.hash(password, salt);
+    }
+
+    if (Array.isArray(created_business) && created_business.length > 0) {
+      created_business.forEach((id) => {
+        // Ensure it's a valid ObjectId and not already present to prevent duplicates
+        if (
+          mongoose.Types.ObjectId.isValid(id) &&
+          !telecallerUpdate.created_business.includes(id)
+        ) {
+          telecallerUpdate.created_business.push(id);
+        }
+      });
     }
 
     await telecallerUpdate.save();
@@ -186,6 +211,7 @@ exports.addTargetToTelecaller = async (req, res) => {
     res.status(500).json({ message: "Error updating target", error });
   }
 };
+
 exports.updateTargetAchievement = async (req, res) => {
   try {
     const { telecallerId } = req.params;

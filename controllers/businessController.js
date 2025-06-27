@@ -7,6 +7,7 @@ const fs = require("fs");
 const fastcsv = require("fast-csv");
 
 const mongoose = require("mongoose");
+const User = require("../models/user");
 
 // Counter Schema for generating unique business IDs
 const counterSchema = new mongoose.Schema({
@@ -60,8 +61,6 @@ exports.createBusiness = async (req, res) => {
       digitalMarketerId,
       bdeId,
       remarks,
-      createdBy,
-      creatorModel,
     } = req.body;
 
     const businessId = await generatebusinessId();
@@ -80,8 +79,6 @@ exports.createBusiness = async (req, res) => {
       telecallerId: telecallerId || null,
       digitalMarketerId: digitalMarketerId || null,
       bdeId: bdeId || null,
-      createdBy,
-      creatorModel,
     });
 
     await newBusiness.save();
@@ -118,6 +115,32 @@ exports.createBusiness = async (req, res) => {
       }
     }
 
+    const userId = req.user._id;
+    const userType = req.userType;
+
+    switch (userType) {
+      case "bde":
+        await BDE.findByIdAndUpdate(userId, {
+          $push: { created_business: newBusiness._id },
+        });
+        break;
+      case "telecaller":
+        await Telecaller.findByIdAndUpdate(userId, {
+          $push: { created_business: newBusiness._id },
+        });
+        break;
+      case "digitalMarketer":
+        await DigitalMarketer.findByIdAndUpdate(userId, {
+          $push: { created_business: newBusiness._id },
+        });
+        break;
+      default:
+        await User.findByIdAndUpdate(userId, {
+          $push: { created_business: newBusiness._id },
+        });
+        break;
+    }
+
     res
       .status(201)
       .json({ message: "Business created successfully", newBusiness });
@@ -131,6 +154,335 @@ exports.createBusiness = async (req, res) => {
   }
 };
 // Fetch businesses with filtering based on telecallerId, category, and city
+// exports.getBusiness = async (req, res) => {
+//   try {
+//     const {
+//       mobileNumber,
+//       city,
+//       category,
+//       status,
+//       source,
+//       telecallerId,
+//       bdeId,
+//       byTagAppointment,
+//       digitalMarketerId,
+//       followupstartdate,
+//       followupenddate,
+//       appointmentstartdate,
+//       appointmentenddate,
+//       createdstartdate,
+//       createdenddate,
+//       businessname,
+//       appointmentDate,
+//       createdBy,
+//     } = req.query;
+
+//     const limit =
+//       parseInt(req.query.limit) > 0 ? parseInt(req.query.limit) : 20;
+//     const page = parseInt(req.query.page) > 0 ? parseInt(req.query.page) : 1;
+
+//     let filter = {};
+
+//     if (mobileNumber) {
+//       filter.mobileNumber = { $regex: mobileNumber, $options: "i" };
+//     }
+
+//     if (businessname) {
+//       filter.buisnessname = {
+//         $regex: businessname,
+//         $options: "i",
+//       };
+//     }
+
+//     if (status) filter.status = status;
+
+//     if (source) filter.source = source;
+
+//     if (followupstartdate && followupenddate) {
+//       const startDate = new Date(followupstartdate); // Parse start date
+//       const endDate = new Date(followupenddate); // Parse end date
+//       endDate.setUTCHours(23, 59, 59, 999); // Set the end date to the end of the day
+
+//       // Add the followUpDate range filter
+//       filter.followUpDate = { $gte: startDate, $lte: endDate };
+//     } else if (followupstartdate) {
+//       const startDate = new Date(followupstartdate);
+//       filter.followUpDate = { $gte: startDate };
+//     } else if (followupenddate) {
+//       const endDate = new Date(followupenddate);
+//       endDate.setUTCHours(23, 59, 59, 999);
+//       filter.followUpDate = { $lte: endDate };
+//     }
+
+//     if (appointmentstartdate && appointmentenddate) {
+//       const startDate = new Date(appointmentstartdate);
+//       const endDate = new Date(appointmentenddate);
+//       endDate.setUTCHours(23, 59, 59, 999);
+
+//       filter.appointmentDate = { $gte: startDate, $lte: endDate };
+//     } else if (appointmentstartdate) {
+//       const startDate = new Date(appointmentstartdate);
+//       filter.appointmentDate = { $gte: startDate };
+//     } else if (appointmentenddate) {
+//       const endDate = new Date(appointmentenddate);
+//       endDate.setUTCHours(23, 59, 59, 999);
+//       filter.appointmentDate = { $lte: endDate };
+//     }
+
+//     if (createdstartdate && createdenddate) {
+//       const startDate = new Date(createdstartdate);
+//       const endDate = new Date(createdenddate);
+//       endDate.setUTCHours(23, 59, 59, 999);
+
+//       filter.createdAt = { $gte: startDate, $lte: endDate };
+//     } else if (createdstartdate) {
+//       const startDate = new Date(createdstartdate);
+//       filter.createdAt = { $gte: startDate };
+//     } else if (createdenddate) {
+//       const endDate = new Date(createdenddate);
+//       endDate.setUTCHours(23, 59, 59, 999);
+//       filter.createdAt = { $lte: endDate };
+//     }
+
+//     const applyCategoryCityFilter = (categories = [], cities = []) => {
+//       const categoryFilter =
+//         category || categories.length
+//           ? { category: { $in: category ? [category] : categories } }
+//           : null;
+//       const cityFilter =
+//         city || cities.length
+//           ? { city: { $in: city ? [city] : cities } }
+//           : null;
+
+//       const andConditions = [];
+//       if (categoryFilter) andConditions.push(categoryFilter);
+//       if (cityFilter) andConditions.push(cityFilter);
+
+//       if (andConditions.length > 0) {
+//         if (!filter.$and) filter.$and = [];
+//         filter.$and.push(...andConditions);
+//       }
+//     };
+
+//     applyCategoryCityFilter([], []);
+
+//     if (createdBy) {
+//       let creatorUser = null; // This is a temporary variable to hold the found user document
+//       // let creatorModelName = ''; // This variable was just for internal tracking/messages, not for filtering.
+
+//       // Try to find the user across different models concurrently using their _id
+//       const [bdeUser, telecallerUser, digitalMarketerUser, adminUser] =
+//         await Promise.all([
+//           BDE.findById(createdBy), // Search BDE collection by the provided _id
+//           Telecaller.findById(createdBy), // Search Telecaller collection by the provided _id
+//           DigitalMarketer.findById(createdBy), // Search DigitalMarketer collection by the provided _id
+//           User.findById(createdBy), // Search User collection by the provided _id
+//         ]);
+
+//       // Identify which user was found
+//       if (bdeUser) {
+//         creatorUser = bdeUser;
+//         // creatorModelName = 'BDE'; // Not used in filtering
+//       } else if (telecallerUser) {
+//         creatorUser = telecallerUser;
+//         // creatorModelName = 'Telecaller'; // Not used in filtering
+//       } else if (digitalMarketerUser) {
+//         creatorUser = digitalMarketerUser;
+//         // creatorModelName = 'DigitalMarketer'; // Not used in filtering
+//       } else if (adminUser) {
+//         creatorUser = adminUser;
+//         // creatorModelName = 'User'; // Not used in filtering
+//       }
+
+//       if (!creatorUser) {
+//         // If the provided createdBy ID doesn't match any user, return 404
+//         return res.status(404).json({
+//           message: `Creator (User with ID: ${createdBy}) not found in BDE, Telecaller, or Digital Marketer collections.`,
+//         });
+//       }
+
+//       // Extract the list of business _ids from the found user's `created_business` array
+//       let creatorBusinessIds = [];
+//       if (
+//         creatorUser.created_business &&
+//         Array.isArray(creatorUser.created_business)
+//       ) {
+//         // Assuming creatorUser.created_business already contains mongoose ObjectIds
+//         creatorBusinessIds = creatorUser.created_business;
+//       }
+
+//       // Apply the filter to the Business collection based on the extracted IDs
+//       // This means: find Business documents where their _id is in the creatorBusinessIds array
+//       if (creatorBusinessIds.length > 0) {
+//         if (!filter.$and) filter.$and = [];
+//         filter.$and.push({ _id: { $in: creatorBusinessIds } }); // <-- This is the key line
+//       } else {
+//         // If the creator exists but has no businesses in their list,
+//         // we ensure no results are returned for this filter.
+//         if (!filter.$and) filter.$and = [];
+//         filter.$and.push({ _id: { $in: [] } }); // This ensures an empty result set for this specific filter
+//       }
+//     }
+
+//     // Telecaller-specific filters
+//     if (telecallerId) {
+//       const telecaller = await Telecaller.findOne({ telecallerId });
+
+//       if (!telecaller) {
+//         return res.status(404).json({ message: "Telecaller not found" });
+//       }
+
+//       const assignedCategories = telecaller.assignCategories.map((c) =>
+//         c.category.trim()
+//       );
+//       const assignedCities = telecaller.assignCities.map((c) => c.city.trim());
+
+//       const createdBusiness = telecaller.created_business;
+
+//       const orConditions = [];
+
+//       orConditions.push({ telecallerId });
+
+//       if (assignedCategories.length > 0) {
+//         orConditions.push({ category: { $in: assignedCategories } });
+//       }
+
+//       if (assignedCities.length > 0) {
+//         orConditions.push({ city: { $in: assignedCities } });
+//       }
+
+//       if (createdBusiness && createdBusiness.length > 0) {
+//         orConditions.push({ _id: { $in: createdBusiness } });
+//       }
+
+//       if (!filter.$or) filter.$or = [];
+//       filter.$or.push(...orConditions);
+//     }
+
+//     // Digital Marketer-specific filters
+//     if (digitalMarketerId) {
+//       const digitalMarketer = await DigitalMarketer.findOne({
+//         digitalMarketerId,
+//       });
+
+//       if (!digitalMarketer) {
+//         return res.status(404).json({ message: "Digital Marketer not found" });
+//       }
+
+//       const assignedCategories = digitalMarketer.assignCategories.map(
+//         (c) => c.category
+//       );
+//       const assignedCities = digitalMarketer.assignCities.map((c) => c.city);
+
+//       const createdBusiness = digitalMarketer.created_business;
+
+//       applyCategoryCityFilter(assignedCategories, assignedCities);
+
+//       if (createdBusiness && createdBusiness.length > 0) {
+//         orConditions.push({ _id: { $in: createdBusiness } });
+//       }
+//       // filter.digitalMarketerId = digitalMarketerId;
+//     }
+
+//     // BDE-specific filters
+//     if (bdeId) {
+//       const bde = await BDE.findOne({ bdeId });
+
+//       if (!bde) {
+//         return res.status(404).json({ message: "BDE not found" });
+//       }
+
+//       const bdeAssignedCategories = bde.assignCategories.map((c) =>
+//         c.category.trim()
+//       );
+//       const bdeAssignedCities = bde.assignCities.map((c) => c.city.trim());
+
+//       const createdBusiness = bde.created_business;
+
+//       const orConditions = [];
+
+//       // Include businesses with the matching BDE ID
+//       orConditions.push({ bdeId });
+
+//       if (byTagAppointment === "true") {
+//         if (bdeAssignedCategories.length > 0) {
+//           orConditions.push({
+//             $or: [
+//               { tagAppointment: bdeId },
+//               { category: { $in: bdeAssignedCategories } },
+//             ],
+//           });
+//         } else {
+//           orConditions.push({ tagAppointment: bdeId });
+//         }
+//       } else {
+//         // Include assigned categories and cities
+//         if (bdeAssignedCategories.length > 0) {
+//           orConditions.push({ category: { $in: bdeAssignedCategories } });
+//         }
+
+//         if (bdeAssignedCities.length > 0) {
+//           orConditions.push({ city: { $in: bdeAssignedCities } });
+//         }
+//       }
+
+//       if (createdBusiness && createdBusiness.length > 0) {
+//         orConditions.push({ _id: { $in: createdBusiness } });
+//       }
+
+//       // Apply the OR condition to the filter
+//       if (!filter.$or) filter.$or = [];
+//       filter.$or.push(...orConditions);
+//     }
+
+//     let sort = {};
+//     sort = { tagAppointment: -1 };
+//     if (appointmentDate === "true") {
+//       sort.appointmentDate = -1;
+//     } else {
+//       sort.createdAt = -1;
+//     }
+
+//     // Pagination: Apply limit and skip
+
+//     const pageNumber = Math.max(1, parseInt(page));
+//     const skip = (pageNumber - 1) * parseInt(limit);
+
+//     // Fetch businesses with pagination
+//     const businesses = await business
+//       .find(filter)
+//       .sort(sort)
+//       .skip(skip)
+//       .limit(parseInt(limit));
+
+//     // Fetch total count of businesses for pagination
+//     const totalCount = await business.countDocuments(filter);
+//     const totalPages = Math.ceil(totalCount / limit);
+
+//     const [FollowupCount, visitCount, dealCloseCount] = await Promise.all([
+//       business.countDocuments({ ...filter, status: "Followup" }),
+//       business.countDocuments({ ...filter, status: "Appointment Generated" }),
+//       business.countDocuments({ ...filter, status: "Deal Closed" }),
+//     ]);
+
+//     // Send response with paginated data and pagination info
+//     res.status(200).json({
+//       businesses,
+//       totalPages,
+//       currentPage: parseInt(page),
+//       totalCount,
+//       statuscount: {
+//         FollowupCount,
+//         visitCount,
+//         dealCloseCount,
+//       },
+//     });
+//   } catch (error) {
+//     console.error("Error fetching businesses:", error);
+//     res.status(500).json({ message: "Error fetching businesses", error });
+//   }
+// };
+
 exports.getBusiness = async (req, res) => {
   try {
     const {
@@ -151,190 +503,330 @@ exports.getBusiness = async (req, res) => {
       createdenddate,
       businessname,
       appointmentDate,
+      createdBy,
     } = req.query;
 
     const limit =
       parseInt(req.query.limit) > 0 ? parseInt(req.query.limit) : 20;
     const page = parseInt(req.query.page) > 0 ? parseInt(req.query.page) : 1;
 
-    let filter = {};
+    let filter = {}; // Main filter for fetching businesses
+    let createdBusinessCountFilter = {}; // Specific filter for created_business_count
 
+    // --- Common Filters (applied to both main and count filters) ---
+    // Start by cloning general filters to the createdBusinessCountFilter
+    // Note: Complex $and/$or will be handled below. This handles direct field matches.
     if (mobileNumber) {
       filter.mobileNumber = { $regex: mobileNumber, $options: "i" };
+      createdBusinessCountFilter.mobileNumber = {
+        $regex: mobileNumber,
+        $options: "i",
+      };
     }
-
     if (businessname) {
-      filter.buisnessname = {
+      filter.buisnessname = { $regex: businessname, $options: "i" };
+      createdBusinessCountFilter.buisnessname = {
         $regex: businessname,
         $options: "i",
       };
     }
+    if (status) {
+      filter.status = status;
+      createdBusinessCountFilter.status = status;
+    }
+    if (source) {
+      filter.source = source;
+      createdBusinessCountFilter.source = source;
+    }
 
-    if (status) filter.status = status;
-
-    if (source) filter.source = source;
-
+    // Date Filters (applied to both main and count filters)
     if (followupstartdate && followupenddate) {
-      const startDate = new Date(followupstartdate); // Parse start date
-      const endDate = new Date(followupenddate); // Parse end date
-      endDate.setUTCHours(23, 59, 59, 999); // Set the end date to the end of the day
-
-      // Add the followUpDate range filter
+      const startDate = new Date(followupstartdate);
+      const endDate = new Date(followupenddate);
+      endDate.setUTCHours(23, 59, 59, 999);
       filter.followUpDate = { $gte: startDate, $lte: endDate };
+      createdBusinessCountFilter.followUpDate = {
+        $gte: startDate,
+        $lte: endDate,
+      };
     } else if (followupstartdate) {
       const startDate = new Date(followupstartdate);
       filter.followUpDate = { $gte: startDate };
+      createdBusinessCountFilter.followUpDate = { $gte: startDate };
     } else if (followupenddate) {
       const endDate = new Date(followupenddate);
       endDate.setUTCHours(23, 59, 59, 999);
       filter.followUpDate = { $lte: endDate };
+      createdBusinessCountFilter.followUpDate = { $lte: endDate };
     }
 
     if (appointmentstartdate && appointmentenddate) {
       const startDate = new Date(appointmentstartdate);
       const endDate = new Date(appointmentenddate);
       endDate.setUTCHours(23, 59, 59, 999);
-
       filter.appointmentDate = { $gte: startDate, $lte: endDate };
+      createdBusinessCountFilter.appointmentDate = {
+        $gte: startDate,
+        $lte: endDate,
+      };
     } else if (appointmentstartdate) {
       const startDate = new Date(appointmentstartdate);
       filter.appointmentDate = { $gte: startDate };
+      createdBusinessCountFilter.appointmentDate = { $gte: startDate };
     } else if (appointmentenddate) {
       const endDate = new Date(appointmentenddate);
       endDate.setUTCHours(23, 59, 59, 999);
       filter.appointmentDate = { $lte: endDate };
+      createdBusinessCountFilter.appointmentDate = { $lte: endDate };
     }
 
     if (createdstartdate && createdenddate) {
       const startDate = new Date(createdstartdate);
       const endDate = new Date(createdenddate);
       endDate.setUTCHours(23, 59, 59, 999);
-
       filter.createdAt = { $gte: startDate, $lte: endDate };
+      createdBusinessCountFilter.createdAt = { $gte: startDate, $lte: endDate };
     } else if (createdstartdate) {
       const startDate = new Date(createdstartdate);
       filter.createdAt = { $gte: startDate };
+      createdBusinessCountFilter.createdAt = { $gte: startDate };
     } else if (createdenddate) {
       const endDate = new Date(createdenddate);
       endDate.setUTCHours(23, 59, 59, 999);
       filter.createdAt = { $lte: endDate };
+      createdBusinessCountFilter.createdAt = { $lte: endDate };
     }
 
-    const applyCategoryCityFilter = (categories = [], cities = []) => {
-      const categoryFilter =
-        category || categories.length
-          ? { category: { $in: category ? [category] : categories } }
-          : null;
-      const cityFilter =
-        city || cities.length
-          ? { city: { $in: city ? [city] : cities } }
-          : null;
+    // Helper function for category/city filters
+    const applyCategoryCityFilter = (
+      targetFilter,
+      categories = [],
+      cities = []
+    ) => {
+      const catConditions = [];
+      if (category) catConditions.push(category);
+      catConditions.push(...categories); // Add assigned categories
+
+      const cityConditions = [];
+      if (city) cityConditions.push(city);
+      cityConditions.push(...cities); // Add assigned cities
 
       const andConditions = [];
-      if (categoryFilter) andConditions.push(categoryFilter);
-      if (cityFilter) andConditions.push(cityFilter);
+      if (catConditions.length > 0) {
+        andConditions.push({ category: { $in: catConditions } });
+      }
+      if (cityConditions.length > 0) {
+        andConditions.push({ city: { $in: cityConditions } });
+      }
 
       if (andConditions.length > 0) {
-        if (!filter.$and) filter.$and = [];
-        filter.$and.push(...andConditions);
+        if (!targetFilter.$and) targetFilter.$and = [];
+        targetFilter.$and.push(...andConditions);
       }
     };
 
-    applyCategoryCityFilter([], []);
+    // Apply general category/city filters from req.query to both filters initially
+    applyCategoryCityFilter(filter);
+    applyCategoryCityFilter(createdBusinessCountFilter);
 
-    // Telecaller-specific filters
-    if (telecallerId) {
+    // Initialize arrays for top-level AND conditions
+    if (!filter.$and) filter.$and = [];
+    if (!createdBusinessCountFilter.$and) createdBusinessCountFilter.$and = [];
+
+    let targetUserFound = false; // Flag to check if any specific user ID was used for created_business_count
+    let createdBusinessIdsToCount = []; // Collect IDs for the created_business_count filter
+
+    // --- Prioritized Created Business Count Logic ---
+
+    // 1. createdBy (Highest Priority)
+    if (createdBy) {
+      targetUserFound = true;
+      let creatorUser = null;
+      const [bdeUser, telecallerUser, digitalMarketerUser, adminUser] =
+        await Promise.all([
+          BDE.findOne({
+            $or: [
+              {
+                _id: mongoose.Types.ObjectId.isValid(createdBy)
+                  ? createdBy
+                  : undefined,
+              },
+              { bdeId: createdBy },
+            ],
+          }),
+          Telecaller.findOne({
+            $or: [
+              {
+                _id: mongoose.Types.ObjectId.isValid(createdBy)
+                  ? createdBy
+                  : undefined,
+              },
+              { telecallerId: createdBy },
+            ],
+          }),
+          DigitalMarketer.findOne({
+            $or: [
+              {
+                _id: mongoose.Types.ObjectId.isValid(createdBy)
+                  ? createdBy
+                  : undefined,
+              },
+              { digitalMarketerId: createdBy },
+            ],
+          }),
+          User.findById(
+            mongoose.Types.ObjectId.isValid(createdBy) ? createdBy : undefined
+          ),
+        ]);
+
+      if (bdeUser) {
+        creatorUser = bdeUser;
+      } else if (telecallerUser) {
+        creatorUser = telecallerUser;
+      } else if (digitalMarketerUser) {
+        creatorUser = digitalMarketerUser;
+      } else if (adminUser) {
+        creatorUser = adminUser;
+      }
+
+      if (!creatorUser) {
+        // Creator not found, so no businesses created by this specific ID
+        createdBusinessIdsToCount = [];
+        filter.$and.push({ _id: { $in: [] } }); // Ensure main filter yields no results for this specific creator
+      } else {
+        if (
+          creatorUser.created_business &&
+          Array.isArray(creatorUser.created_business)
+        ) {
+          createdBusinessIdsToCount = creatorUser.created_business;
+        }
+        // Apply this filter to the MAIN business list as well
+        if (createdBusinessIdsToCount.length > 0) {
+          filter.$and.push({ _id: { $in: createdBusinessIdsToCount } });
+        } else {
+          filter.$and.push({ _id: { $in: [] } });
+        }
+      }
+    }
+    // 2. telecallerId (Next Priority if createdBy is not present)
+    else if (telecallerId) {
+      targetUserFound = true;
       const telecaller = await Telecaller.findOne({ telecallerId });
-
       if (!telecaller) {
         return res.status(404).json({ message: "Telecaller not found" });
       }
-
+      if (
+        telecaller.created_business &&
+        Array.isArray(telecaller.created_business)
+      ) {
+        createdBusinessIdsToCount = telecaller.created_business;
+      }
+      // Apply telecaller's general filter conditions to the main filter
       const assignedCategories = telecaller.assignCategories.map((c) =>
         c.category.trim()
       );
       const assignedCities = telecaller.assignCities.map((c) => c.city.trim());
-
-      const orConditions = [];
-
-      orConditions.push({ telecallerId });
-
-      if (assignedCategories.length > 0) {
-        orConditions.push({ category: { $in: assignedCategories } });
+      const telecallerOrConditions = [{ telecallerId: telecallerId }];
+      if (assignedCategories.length > 0)
+        telecallerOrConditions.push({ category: { $in: assignedCategories } });
+      if (assignedCities.length > 0)
+        telecallerOrConditions.push({ city: { $in: assignedCities } });
+      if (telecallerOrConditions.length > 0) {
+        filter.$and.push({ $or: telecallerOrConditions });
       }
-
-      if (assignedCities.length > 0) {
-        orConditions.push({ city: { $in: assignedCities } });
-      }
-
-      if (!filter.$or) filter.$or = [];
-      filter.$or.push(...orConditions);
     }
-
-    // Digital Marketer-specific filters
-    if (digitalMarketerId) {
-      const digitalMarketer = await DigitalMarketer.findOne({
-        digitalMarketerId,
-      });
-
-      if (!digitalMarketer) {
-        return res.status(404).json({ message: "Digital Marketer not found" });
-      }
-
-      const assignedCategories = digitalMarketer.assignCategories.map(
-        (c) => c.category
-      );
-      const assignedCities = digitalMarketer.assignCities.map((c) => c.city);
-
-      applyCategoryCityFilter(assignedCategories, assignedCities);
-      // filter.digitalMarketerId = digitalMarketerId;
-    }
-
-    // BDE-specific filters
-    if (bdeId) {
+    // 3. bdeId (Lowest Priority if createdBy and telecallerId are not present)
+    else if (bdeId) {
+      targetUserFound = true;
       const bde = await BDE.findOne({ bdeId });
-
       if (!bde) {
         return res.status(404).json({ message: "BDE not found" });
       }
-
+      if (bde.created_business && Array.isArray(bde.created_business)) {
+        createdBusinessIdsToCount = bde.created_business;
+      }
+      // Apply BDE's general filter conditions to the main filter
       const bdeAssignedCategories = bde.assignCategories.map((c) =>
         c.category.trim()
       );
       const bdeAssignedCities = bde.assignCities.map((c) => c.city.trim());
-
-      const orConditions = [];
-
-      // Include businesses with the matching BDE ID
-      orConditions.push({ bdeId });
+      const bdeOrConditions = [{ bdeId: bdeId }];
 
       if (byTagAppointment === "true") {
-        if (bdeAssignedCategories.length > 0) {
-          orConditions.push({
-            $or: [
-              { tagAppointment: bdeId },
-              { category: { $in: bdeAssignedCategories } },
-            ],
-          });
-        } else {
-          orConditions.push({ tagAppointment: bdeId });
-        }
+        bdeOrConditions.push({
+          $or: [
+            { tagAppointment: bdeId },
+            ...(bdeAssignedCategories.length > 0
+              ? [{ category: { $in: bdeAssignedCategories } }]
+              : []),
+          ],
+        });
       } else {
-        // Include assigned categories and cities
-        if (bdeAssignedCategories.length > 0) {
-          orConditions.push({ category: { $in: bdeAssignedCategories } });
-        }
-
-        if (bdeAssignedCities.length > 0) {
-          orConditions.push({ city: { $in: bdeAssignedCities } });
-        }
+        if (bdeAssignedCategories.length > 0)
+          bdeOrConditions.push({ category: { $in: bdeAssignedCategories } });
+        if (bdeAssignedCities.length > 0)
+          bdeOrConditions.push({ city: { $in: bdeAssignedCities } });
       }
-
-      // Apply the OR condition to the filter
-      if (!filter.$or) filter.$or = [];
-      filter.$or.push(...orConditions);
+      if (bdeOrConditions.length > 0) {
+        filter.$and.push({ $or: bdeOrConditions });
+      }
+    }
+    // 4. digitalMarketerId (Handle separately, if it should combine with other roles)
+    // If Digital Marketer should also contribute to main filter's $and and is not part of the 'createdBy' chain
+    // (Meaning you want to see businesses related to a DM AND a telecaller, etc.)
+    if (digitalMarketerId) {
+      const digitalMarketer = await DigitalMarketer.findOne({
+        digitalMarketerId,
+      });
+      if (!digitalMarketer) {
+        return res.status(404).json({ message: "Digital Marketer not found" });
+      }
+      const assignedCategories = digitalMarketer.assignCategories.map(
+        (c) => c.category
+      );
+      const assignedCities = digitalMarketer.assignCities.map((c) => c.city);
+      const dmOrConditions = [];
+      // dmOrConditions.push({ digitalMarketerId: digitalMarketerId }); // If exists on business model
+      if (assignedCategories.length > 0) {
+        dmOrConditions.push({ category: { $in: assignedCategories } });
+      }
+      if (assignedCities.length > 0) {
+        dmOrConditions.push({ city: { $in: assignedCities } });
+      }
+      // NOTE: created_business for DigitalMarketer is NOT used for createdBusinessIdsToCount here
+      // unless digitalMarketerId was passed as 'createdBy'
+      if (dmOrConditions.length > 0) {
+        filter.$and.push({ $or: dmOrConditions });
+      }
     }
 
+    // Finalize createdBusinessCountFilter based on the priority chain
+    if (targetUserFound) {
+      if (createdBusinessIdsToCount.length > 0) {
+        createdBusinessCountFilter.$and.push({
+          _id: { $in: createdBusinessIdsToCount },
+        });
+      } else {
+        createdBusinessCountFilter.$and.push({ _id: { $in: [] } }); // No created businesses by the selected user/role
+      }
+    } else {
+      // If no createdBy, telecallerId, or bdeId was provided, count all businesses matching general filters.
+      // This is equivalent to your previous `business.countDocuments(filter)` if no specific creator was identified.
+      // The createdAt date filter will automatically apply here if present.
+    }
+
+    // Clean up empty $and arrays from both filters
+    if (filter.$and && filter.$and.length === 0) {
+      delete filter.$and;
+    }
+    if (
+      createdBusinessCountFilter.$and &&
+      createdBusinessCountFilter.$and.length === 0
+    ) {
+      delete createdBusinessCountFilter.$and;
+    }
+
+    // --- Sorting ---
     let sort = {};
     sort = { tagAppointment: -1 };
     if (appointmentDate === "true") {
@@ -343,36 +835,33 @@ exports.getBusiness = async (req, res) => {
       sort.createdAt = -1;
     }
 
-    // Pagination: Apply limit and skip
-
+    // --- Pagination ---
     const pageNumber = Math.max(1, parseInt(page));
     const skip = (pageNumber - 1) * parseInt(limit);
 
-    // Fetch businesses with pagination
+    // --- Fetch Businesses ---
     const businesses = await business
       .find(filter)
       .sort(sort)
       .skip(skip)
       .limit(parseInt(limit));
 
-    // Fetch total count of businesses for pagination
+    // --- Counts ---
     const totalCount = await business.countDocuments(filter);
     const totalPages = Math.ceil(totalCount / limit);
 
-    const FollowupCount = await business.countDocuments({
-      ...filter,
-      status: "Followup",
-    });
-    const visitCount = await business.countDocuments({
-      ...filter,
-      status: "Appointment Generated",
-    });
-    const dealCloseCount = await business.countDocuments({
-      ...filter,
-      status: "Deal Closed",
-    });
+    // Calculate created_business_count using the specifically built filter
+    const created_business_count = await business.countDocuments(
+      createdBusinessCountFilter
+    );
 
-    // Send response with paginated data and pagination info
+    const [FollowupCount, visitCount, dealCloseCount] = await Promise.all([
+      business.countDocuments({ ...filter, status: "Followup" }),
+      business.countDocuments({ ...filter, status: "Appointment Generated" }),
+      business.countDocuments({ ...filter, status: "Deal Closed" }),
+    ]);
+
+    // --- Send Response ---
     res.status(200).json({
       businesses,
       totalPages,
@@ -382,6 +871,7 @@ exports.getBusiness = async (req, res) => {
         FollowupCount,
         visitCount,
         dealCloseCount,
+        created_business_count,
       },
     });
   } catch (error) {
@@ -631,8 +1121,38 @@ exports.deleteBusiness = async (req, res) => {
       return res.status(404).json({ message: "Lead not found" });
     }
 
-    // Delete the lead from the leads collection
-    await business.findOneAndDelete({ businessId });
+    const deletedBusinessObjectId = businessDelete._id; // Get the MongoDB ObjectId
+
+    // 2. Prepare all the asynchronous operations
+    const deleteBusinessPromise = business.deleteOne({ businessId });
+
+    const updateBDEsPromise = BDE.updateMany(
+      { created_business: deletedBusinessObjectId },
+      { $pull: { created_business: deletedBusinessObjectId } }
+    );
+
+    const updateTelecallersPromise = Telecaller.updateMany(
+      { created_business: deletedBusinessObjectId },
+      { $pull: { created_business: deletedBusinessObjectId } }
+    );
+
+    const updateDigitalMarketersPromise = DigitalMarketer.updateMany(
+      { created_business: deletedBusinessObjectId },
+      { $pull: { created_business: deletedBusinessObjectId } }
+    );
+
+    const updateUserPromise = User.updateMany(
+      { created_business: deletedBusinessObjectId },
+      { $pull: { created_business: deletedBusinessObjectId } }
+    );
+
+    await Promise.all([
+      deleteBusinessPromise,
+      updateBDEsPromise,
+      updateTelecallersPromise,
+      updateDigitalMarketersPromise,
+      updateUserPromise,
+    ]);
 
     res.status(200).json({ message: "Lead deleted successfully" });
   } catch (error) {

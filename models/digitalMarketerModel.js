@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+
 const Schema = mongoose.Schema;
 
 const targetSchema = new Schema({
@@ -34,11 +35,21 @@ const digitalmarketerSchema = new Schema({
   attendence_list: [
     {
       date: { type: Date, default: Date.now },
-     entry_time: { type: String },
+      entry_time: { type: String },
       exit_time: { type: String },
       day_count: { type: String },
     },
   ],
+  created_business: {
+    type: [mongoose.Types.ObjectId],
+    default: [],
+    ref: "business",
+  },
+  employee_ref: {
+    type: mongoose.Types.ObjectId,
+    required: true,
+    ref: "Employee",
+  },
 });
 
 module.exports = mongoose.model("digitalMarketer", digitalmarketerSchema);

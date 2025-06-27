@@ -1,3 +1,4 @@
+const { default: mongoose } = require("mongoose");
 const digitalMarketer = require("../models/digitalMarketerModel");
 const bcrypt = require("bcryptjs");
 
@@ -28,8 +29,13 @@ const generatedigitalMarketerId = async () => {
 // create Telecaller
 exports.createDigitalMarketer = async (req, res) => {
   try {
-    const { digitalMarketername, mobileNumber, organizationrole, password } =
-      req.body;
+    const {
+      digitalMarketername,
+      mobileNumber,
+      organizationrole,
+      password,
+      employee_ref,
+    } = req.body;
 
     const digitalMarketerId = await generatedigitalMarketerId();
     const salt = await bcrypt.genSalt(10);
@@ -41,6 +47,7 @@ exports.createDigitalMarketer = async (req, res) => {
       mobileNumber,
       organizationrole,
       password: hashedPassword,
+      employee_ref,
     });
 
     await newDigitalMarketer.save();
@@ -71,7 +78,9 @@ exports.createDigitalMarketer = async (req, res) => {
 // alll DigitalMarketer fetch
 exports.getDigitalMarketer = async (req, res) => {
   try {
-    const DigitalMarketer = await digitalMarketer.find();
+    const DigitalMarketer = await digitalMarketer
+      .find()
+      .populate("employee_ref");
     res.status(200).json(DigitalMarketer);
   } catch (error) {
     console.error("Error fetching Digital Marketer", error.message);
@@ -119,6 +128,7 @@ exports.updateDigitalMarketer = async (req, res) => {
       organizationrole,
       status,
       password,
+      created_business,
     } = req.body;
 
     const digitalMarketerUpdate = await digitalMarketer.findOne({
@@ -141,6 +151,18 @@ exports.updateDigitalMarketer = async (req, res) => {
     if (password) {
       const salt = await bcrypt.genSalt(10);
       digitalMarketerUpdate.password = await bcrypt.hash(password, salt);
+    }
+
+    if (Array.isArray(created_business) && created_business.length > 0) {
+      created_business.forEach((id) => {
+        // Ensure it's a valid ObjectId and not already present to prevent duplicates
+        if (
+          mongoose.Types.ObjectId.isValid(id) &&
+          !digitalMarketerUpdate.created_business.includes(id)
+        ) {
+          digitalMarketerUpdate.created_business.push(id);
+        }
+      });
     }
 
     await digitalMarketerUpdate.save();

@@ -39,6 +39,16 @@ const telecallerSchema = new Schema({
       day_count: { type: String },
     },
   ],
+  created_business: {
+    type: [mongoose.Types.ObjectId],
+    default: [],
+    ref: "business",
+  },
+  employee_ref: {
+    type: mongoose.Types.ObjectId,
+    required: true,
+    ref: "Employee",
+  },
 });
 
 module.exports = mongoose.model("Telecaller", telecallerSchema);

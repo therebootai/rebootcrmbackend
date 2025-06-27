@@ -4,6 +4,7 @@ const jwt = require("jsonwebtoken");
 const dotenv = require("dotenv");
 const bcrypt = require("bcryptjs");
 const axios = require("axios");
+const { default: mongoose } = require("mongoose");
 
 dotenv.config();
 // Get all users
@@ -92,7 +93,12 @@ exports.loginUser = async (req, res) => {
     }
 
     const token = jwt.sign(
-      { id: user._id.toString(), password: user.password, name: user.name },
+      {
+        id: user._id.toString(),
+        password: user.password,
+        name: user.name,
+        userType: "user",
+      },
       process.env.SECRET_KEY,
       { expiresIn: "30d" }
     );
@@ -266,5 +272,36 @@ exports.resetPassword = async (req, res) => {
   } catch (error) {
     console.error("Error resetting password:", error);
     return res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+exports.updateUser = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const { password, created_business } = req.body;
+
+    const user = await User.findById(userId);
+
+    user.password = password || user.password;
+
+    if (Array.isArray(created_business) && created_business.length > 0) {
+      created_business.forEach((id) => {
+        // Ensure it's a valid ObjectId and not already present to prevent duplicates
+        if (
+          mongoose.Types.ObjectId.isValid(id) &&
+          !user.created_business.includes(id)
+        ) {
+          user.created_business.push(id);
+        }
+      });
+    }
+
+    await user.save();
+
+    res.status(200).json({ message: "User updated successfully", user });
+  } catch (error) {
+    console.error("Error updating User:", error.message);
+    res.status(500).json({ message: "Error updating User", error });
   }
 };
