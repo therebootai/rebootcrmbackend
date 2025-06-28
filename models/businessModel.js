@@ -26,6 +26,11 @@ const businessSchema = new Schema({
   appointmentDate: {
     type: Date,
   },
+  visit_result: {
+    reason: { type: String },
+    follow_up_date: { type: Date },
+    visit_time: { type: String },
+  },
 });
 
 const formatDate = (date) => {

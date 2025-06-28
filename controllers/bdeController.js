@@ -76,7 +76,7 @@ exports.createBDE = async (req, res) => {
 // alll BDE fetch
 exports.getBDE = async (req, res) => {
   try {
-    const bdes = await BDE.find().populate("employee_ref");
+    const bdes = await BDE.find().populate("employee_ref").select("-password");
     res.status(200).json(bdes);
   } catch (error) {
     console.error("Error fetching bde", error.message);
