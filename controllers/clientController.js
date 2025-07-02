@@ -132,6 +132,7 @@ exports.getClients = async (req, res) => {
       { $unwind: "$businessNameDoc" },
       { $match: matchStage },
       ...searchStage,
+      { $sort: { createdAt: -1 } },
       {
         $facet: {
           data: [
