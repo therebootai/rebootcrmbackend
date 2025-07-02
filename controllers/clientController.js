@@ -227,3 +227,37 @@ exports.updateClient = async (req, res) => {
     });
   }
 };
+
+exports.deleteClient = async (req, res) => {
+  try {
+    const { clientId } = req.params;
+
+    if (!clientId) {
+      return res.status(400).json({
+        success: false,
+        message: "Client ID is required",
+      });
+    }
+
+    const deletedClient = await ClientModel.findOneAndDelete({ clientId });
+
+    if (!deletedClient) {
+      return res.status(404).json({
+        success: false,
+        message: "Client not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Client deleted successfully",
+      client: deletedClient,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Error deleting client",
+      error: error.message,
+    });
+  }
+};
