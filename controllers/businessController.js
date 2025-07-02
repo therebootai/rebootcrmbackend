@@ -390,6 +390,28 @@ exports.getBusiness = async (req, res) => {
   }
 };
 
+exports.getBusinessSearch = async (req, res) => {
+  try {
+    const { search } = req.query;
+
+    let filter = {};
+
+    if (search) {
+      filter.$or = [
+        { buisnessname: { $regex: search, $options: "i" } },
+        { mobileNumber: { $regex: search, $options: "i" } },
+      ];
+    }
+
+    const businesses = await business.find(filter).limit(10);
+
+    res.status(200).json(businesses);
+  } catch (error) {
+    console.error("Error fetching businesses:", error);
+    res.status(500).json({ message: "Error fetching businesses", error });
+  }
+};
+
 exports.getBusinessformarketing = async (req, res) => {
   try {
     const { category, city, status } = req.query;

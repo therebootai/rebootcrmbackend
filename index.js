@@ -25,6 +25,7 @@ const webSiteLeadsRoutes = require("./routes/webSiteLeadsRoutes");
 const blogRoutes = require("./routes/blogRoutes");
 const careerJobPostRoutes = require("./routes/careerJobPostRoutes");
 const applicationRoutes = require("./routes/applicationRoutes");
+const clientRoute = require("./routes/clientRoutes");
 
 app.use(cors());
 
@@ -55,6 +56,7 @@ app.use("/api/websiteleads", webSiteLeadsRoutes);
 app.use("/api/blogs", blogRoutes);
 app.use("/api/jobpost", careerJobPostRoutes);
 app.use("/api/applications", applicationRoutes);
+app.use("/api/client", clientRoute);
 
 app.listen(port, () => {
   console.log(`Port starts on  ${port}`);
