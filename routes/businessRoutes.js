@@ -1,9 +1,12 @@
 const express = require("express");
 const router = express.Router();
 const businessController = require("../controllers/businessController");
+const { checkAuth } = require("../middleware/checkAuth");
 
-router.post("/create", businessController.createBusiness);
+router.post("/create", checkAuth, businessController.createBusiness);
 router.get("/get", businessController.getBusiness);
+router.get("/getsearch", businessController.getBusinessSearch);
+
 router.get("/marketingget", businessController.getBusinessformarketing);
 
 router.get("/getfilter", businessController.getBusinessFilter);

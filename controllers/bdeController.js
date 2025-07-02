@@ -1,3 +1,4 @@
+const { default: mongoose } = require("mongoose");
 const BDE = require("../models/bdeModel");
 const bcrypt = require("bcryptjs");
 
@@ -31,7 +32,8 @@ const generatebdeId = async () => {
 // create Telecaller
 exports.createBDE = async (req, res) => {
   try {
-    const { bdename, mobileNumber, organizationrole, password } = req.body;
+    const { bdename, mobileNumber, organizationrole, password, employee_ref } =
+      req.body;
 
     const bdeId = await generatebdeId();
     const salt = await bcrypt.genSalt(10);
@@ -43,6 +45,7 @@ exports.createBDE = async (req, res) => {
       mobileNumber,
       organizationrole,
       password: hashedPassword,
+      employee_ref,
     });
 
     await newBDE.save();
@@ -73,7 +76,7 @@ exports.createBDE = async (req, res) => {
 // alll BDE fetch
 exports.getBDE = async (req, res) => {
   try {
-    const bdes = await BDE.find();
+    const bdes = await BDE.find().populate("employee_ref").select("-password");
     res.status(200).json(bdes);
   } catch (error) {
     console.error("Error fetching bde", error.message);
@@ -114,8 +117,14 @@ exports.deleteBDE = async (req, res) => {
 exports.updateBDE = async (req, res) => {
   try {
     const { bdeId } = req.params;
-    const { bdename, mobileNumber, organizationrole, status, password } =
-      req.body;
+    const {
+      bdename,
+      mobileNumber,
+      organizationrole,
+      status,
+      password,
+      created_business,
+    } = req.body;
 
     const bdeUpdate = await BDE.findOne({ bdeId });
     if (!bdeUpdate) {
@@ -132,6 +141,18 @@ exports.updateBDE = async (req, res) => {
     if (password) {
       const salt = await bcrypt.genSalt(10);
       bdeUpdate.password = await bcrypt.hash(password, salt);
+    }
+
+    if (Array.isArray(created_business) && created_business.length > 0) {
+      created_business.forEach((id) => {
+        // Ensure it's a valid ObjectId and not already present to prevent duplicates
+        if (
+          mongoose.Types.ObjectId.isValid(id) &&
+          !bdeUpdate.created_business.includes(id)
+        ) {
+          bdeUpdate.created_business.push(id);
+        }
+      });
     }
 
     await bdeUpdate.save();

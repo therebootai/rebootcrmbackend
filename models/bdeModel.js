@@ -31,6 +31,24 @@ const bdeSchema = new Schema({
 
   assignCategories: { type: [assignCategorySchema], default: [] },
   assignCities: { type: [assignCitySchema], default: [] },
+  attendence_list: [
+    {
+      date: { type: Date, default: Date.now },
+      entry_time: { type: String },
+      exit_time: { type: String },
+      day_count: { type: String },
+    },
+  ],
+  created_business: {
+    type: [mongoose.Types.ObjectId],
+    default: [],
+    ref: "business",
+  },
+  employee_ref: {
+    type: mongoose.Types.ObjectId,
+    required: true,
+    ref: "Employee",
+  },
 });
 
 module.exports = mongoose.model("BDE", bdeSchema);

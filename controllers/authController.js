@@ -3,7 +3,7 @@ const Telecaller = require("../models/telecallerModel");
 const DigitalMarketer = require("../models/digitalMarketerModel");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-const { default: axios } = require("axios");
+const axios = require("axios");
 
 exports.login = async (req, res) => {
   const { mobileNumber, password } = req.body;
@@ -24,11 +24,37 @@ exports.login = async (req, res) => {
         return res.status(400).json({ message: "Invalid credentials" });
       }
 
+      const now = new Date();
+      const today = now.toISOString().split("T")[0];
+      const entryTime = now.toLocaleTimeString("en-US", { hour12: false });
+
+      const existingAttendanceIndex = user.attendence_list.findIndex(
+        (att) => att.date && att.date.toISOString().split("T")[0] === today
+      );
+
+      if (existingAttendanceIndex === -1) {
+        user.attendence_list.push({
+          date: now,
+          entry_time: entryTime,
+          exit_time: "",
+          day_count: "0",
+        });
+      } else {
+        user.attendence_list.push({
+          date: now,
+          entry_time: entryTime,
+          exit_time: "",
+          day_count: "0",
+        });
+      }
+      await user.save(); // Save the updated user document
+
       const token = jwt.sign(
         {
           id: user._id,
           mobileNumber: user.mobileNumber,
           name: user.bdename,
+          userType: "bde",
         },
         process.env.SECRET_KEY,
         { expiresIn: "30d" }
@@ -53,11 +79,38 @@ exports.login = async (req, res) => {
         return res.status(400).json({ message: "Invalid credentials" });
       }
 
+      const now = new Date();
+      const today = now.toISOString().split("T")[0]; // Get YYYY-MM-DD
+      const entryTime = now.toLocaleTimeString("en-US", { hour12: false }); // Get HH:MM:SS
+
+      const existingAttendanceIndex = user.attendence_list.findIndex(
+        (att) => att.date && att.date.toISOString().split("T")[0] === today
+      );
+
+      if (existingAttendanceIndex === -1) {
+        user.attendence_list.push({
+          date: now,
+          entry_time: entryTime,
+          exit_time: "",
+          day_count: "0",
+        });
+      } else {
+        // If you want a new entry for each login on the same day:
+        user.attendence_list.push({
+          date: now,
+          entry_time: entryTime,
+          exit_time: "",
+          day_count: "0",
+        });
+      }
+      await user.save();
+
       const token = jwt.sign(
         {
           id: user._id,
           mobileNumber: user.mobileNumber,
           name: user.telecallername,
+          userType: "telecaller",
         },
         process.env.SECRET_KEY,
         { expiresIn: "30d" }
@@ -82,11 +135,38 @@ exports.login = async (req, res) => {
         return res.status(400).json({ message: "Invalid credentials" });
       }
 
+      const now = new Date();
+      const today = now.toISOString().split("T")[0]; // Get YYYY-MM-DD
+      const entryTime = now.toLocaleTimeString("en-US", { hour12: false }); // Get HH:MM:SS
+
+      const existingAttendanceIndex = user.attendence_list.findIndex(
+        (att) => att.date && att.date.toISOString().split("T")[0] === today
+      );
+
+      if (existingAttendanceIndex === -1) {
+        user.attendence_list.push({
+          date: now,
+          entry_time: entryTime,
+          exit_time: "",
+          day_count: "0",
+        });
+      } else {
+        // If you want a new entry for each login on the same day:
+        user.attendence_list.push({
+          date: now,
+          entry_time: entryTime,
+          exit_time: "",
+          day_count: "0",
+        });
+      }
+      await user.save();
+
       const token = jwt.sign(
         {
           id: user._id,
           mobileNumber: user.mobileNumber,
           name: user.digitalMarketername,
+          userType: "digitalMarketer",
         },
         process.env.SECRET_KEY,
         { expiresIn: "1h" }
@@ -309,5 +389,132 @@ exports.resetPassword = async (req, res) => {
   } catch (error) {
     console.error("Error resetting password:", error);
     return res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+exports.logout = async (req, res) => {
+  try {
+    // Ensure req.user and req.userType are set by your checkAuth middleware
+    if (!req.user || !req.userType) {
+      return res
+        .status(401)
+        .json({ message: "Authentication required. User not identified." });
+    }
+
+    const userId = req.user._id;
+    const userType = req.userType;
+
+    let user;
+    switch (userType) {
+      case "bde":
+        user = await BDE.findById(userId);
+        break;
+      case "telecaller":
+        user = await Telecaller.findById(userId);
+        break;
+      case "digitalMarketer":
+        user = await DigitalMarketer.findById(userId);
+        break;
+      default:
+        return res
+          .status(400)
+          .json({ message: "Invalid user type provided by token." });
+    }
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found in database." });
+    }
+
+    const now = new Date();
+    const today = now.toISOString().split("T")[0]; // Get YYYY-MM-DD
+    const exitTime = now.toLocaleTimeString("en-US", { hour12: false }); // Get HH:MM:SS (e.g., 15:30:00)
+
+    // Find the most recent attendance entry for today that doesn't have an exit_time
+    // We reverse to find the latest open entry for the current day
+    const attendanceListCopy = [...user.attendence_list].reverse(); // Create a shallow copy to reverse
+    const latestAttendanceIndexInReversed = attendanceListCopy.findIndex(
+      (att) =>
+        att.date &&
+        att.date.toISOString().split("T")[0] === today &&
+        !att.exit_time
+    );
+
+    if (latestAttendanceIndexInReversed === -1) {
+      return res.status(400).json({
+        message: "No open attendance record found for today to mark exit.",
+      });
+    }
+
+    // Calculate the actual index in the original (non-reversed) array
+    const actualIndex =
+      user.attendence_list.length - 1 - latestAttendanceIndexInReversed;
+    const attendanceRecord = user.attendence_list[actualIndex];
+
+    // Ensure entry_time exists before proceeding
+    if (!attendanceRecord.entry_time) {
+      return res
+        .status(500)
+        .json({ message: "Corrupted attendance record: missing entry time." });
+    }
+
+    // Set exit time
+    attendanceRecord.exit_time = exitTime;
+
+    // --- Calculate day_count based on your specific logic ---
+    const [entryHours, entryMinutes, entrySeconds] = attendanceRecord.entry_time
+      .split(":")
+      .map(Number);
+    const [exitHours, exitMinutes, exitSeconds] = exitTime
+      .split(":")
+      .map(Number);
+
+    // Create Date objects using a dummy date for time calculations
+    const entryDateTime = new Date(
+      2000,
+      0,
+      1,
+      entryHours,
+      entryMinutes,
+      entrySeconds
+    );
+    let exitDateTime = new Date(
+      2000,
+      0,
+      1,
+      exitHours,
+      exitMinutes,
+      exitSeconds
+    );
+
+    // Handle overnight shifts: if exit time is earlier than entry time, assume it's on the next day
+    if (exitDateTime < entryDateTime) {
+      exitDateTime.setDate(exitDateTime.getDate() + 1);
+    }
+
+    const durationMs = exitDateTime - entryDateTime;
+    const durationHours = durationMs / (1000 * 60 * 60); // Convert milliseconds to hours
+
+    // Apply your specific day_count logic
+    if (durationHours >= 8) {
+      attendanceRecord.day_count = "1";
+    } else if (durationHours > 0) {
+      // If duration is greater than 0 but less than 8 hours
+      attendanceRecord.day_count = "0.5";
+    } else {
+      // Handle cases where duration is 0 or negative (shouldn't happen with correct logic)
+      attendanceRecord.day_count = "0";
+    }
+
+    await user.save(); // Save the updated user document
+
+    res.status(200).json({
+      message: "Logged out successfully. Attendance updated.",
+      attendanceRecord: attendanceRecord, // Return the updated record for confirmation
+    });
+  } catch (error) {
+    console.error("Logout error:", error);
+    res
+      .status(500)
+      .json({ message: "Internal server error. Please try again." });
   }
 };
