@@ -48,6 +48,7 @@ exports.createClient = async (req, res) => {
       tmeLeads,
       dealAmount,
       cleardAmount,
+      remarks,
     } = req.body;
 
     const clientId = await generateClientId();
@@ -65,6 +66,7 @@ exports.createClient = async (req, res) => {
       tmeLeads,
       dealAmount,
       cleardAmount,
+      remarks,
     });
 
     await newClient.save();
@@ -85,7 +87,15 @@ exports.createClient = async (req, res) => {
 
 exports.getClients = async (req, res) => {
   try {
-    const { page = 1, limit = 20, search = "", bdeName, tmeLeads } = req.query;
+    const {
+      page = 1,
+      limit = 20,
+      search = "",
+      bdeName,
+      tmeLeads,
+      startDate,
+      endDate,
+    } = req.query;
 
     const pageNumber = parseInt(page);
     const limitNumber = parseInt(limit);
@@ -101,6 +111,14 @@ exports.getClients = async (req, res) => {
       matchStage.tmeLeads = new mongoose.Types.ObjectId(tmeLeads);
     }
 
+    if (startDate && endDate) {
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+
+      end.setHours(23, 59, 59, 999);
+
+      matchStage.createdAt = { $gte: start, $lte: end };
+    }
     const searchStage = [];
     if (search) {
       const isNumeric = /^\d+$/.test(search);
@@ -158,6 +176,20 @@ exports.getClients = async (req, res) => {
             {
               $unwind: { path: "$tmeLeads", preserveNullAndEmptyArrays: true },
             },
+            {
+              $addFields: {
+                totalAmount: {
+                  $add: [
+                    {
+                      $sum: "$cleardAmount.amount",
+                    },
+                    {
+                      $sum: "$monthlyPaymentAmount.totalAmount",
+                    },
+                  ],
+                },
+              },
+            },
           ],
           total: [{ $count: "count" }],
         },
@@ -186,9 +218,90 @@ exports.getClients = async (req, res) => {
   }
 };
 
+const monthMap = {
+  0: "January",
+  1: "February",
+  2: "March",
+  3: "April",
+  4: "May",
+  5: "June",
+  6: "July",
+  7: "August",
+  8: "September",
+  9: "October",
+  10: "November",
+  11: "December",
+};
+
+exports.getCollectionSummary = async (req, res) => {
+  try {
+    const clients = await ClientModel.find(
+      {},
+      {
+        cleardAmount: 1,
+        monthlyPaymentAmount: 1,
+      }
+    );
+
+    const summary = {};
+
+    for (const client of clients) {
+      for (const item of client.cleardAmount) {
+        const date = new Date(item.createdAt);
+        const year = date.getFullYear();
+        const month = date.getMonth();
+        const amount = item.amount || 0;
+
+        if (!summary[year]) {
+          summary[year] = Array(12).fill(0);
+        }
+
+        summary[year][month] += amount;
+      }
+
+      for (const item of client.monthlyPaymentAmount) {
+        const date = new Date(item.createdAt);
+        const year = date.getFullYear();
+        const month = date.getMonth();
+        const amount = item.totalAmount || 0;
+
+        if (!summary[year]) {
+          summary[year] = Array(12).fill(0);
+        }
+
+        summary[year][month] += amount;
+      }
+    }
+
+    const finalOutput = Object.entries(summary).map(
+      ([year, monthlyAmounts]) => ({
+        year: Number(year),
+        months: monthlyAmounts.map((amt, i) => ({
+          month: monthMap[i],
+          totalAmount: amt,
+        })),
+      })
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: finalOutput,
+    });
+  } catch (error) {
+    console.error("Error generating collection summary:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to generate summary",
+      error: error.message,
+    });
+  }
+};
+
 exports.updateClient = async (req, res) => {
   try {
     const { clientId } = req.params;
+
+    const viewClient = await ClientModel.findOne({ clientId });
 
     if (!clientId) {
       return res.status(400).json({
@@ -199,9 +312,42 @@ exports.updateClient = async (req, res) => {
 
     const updateData = req.body;
 
+    if (updateData.cleardAmount) {
+      updateData.cleardAmount.forEach((item) => {
+        if (item._id) {
+          const existingItem = viewClient.cleardAmount.find(
+            (i) => i._id.toString() === item._id.toString()
+          );
+          if (existingItem && existingItem.amount !== item.amount) {
+            item.updatedAt = new Date();
+          }
+        } else {
+          item.createdAt = new Date();
+          item.updatedAt = new Date();
+        }
+      });
+    }
+
+    if (updateData.monthlyPaymentAmount) {
+      updateData.monthlyPaymentAmount.forEach((item) => {
+        if (item._id) {
+          const existingItem = viewClient.monthlyPaymentAmount.find(
+            (i) => i._id.toString() === item._id.toString()
+          );
+          if (existingItem && existingItem.totalAmount !== item.totalAmount) {
+            item.updatedAt = new Date();
+          }
+        } else {
+          item.createdAt = new Date();
+          item.updatedAt = new Date();
+        }
+      });
+    }
+
     const updatedClient = await ClientModel.findOneAndUpdate(
       { clientId },
-      updateData,
+      { $set: updateData },
+
       { new: true }
     )
       .populate("businessName")
