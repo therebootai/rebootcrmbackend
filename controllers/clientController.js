@@ -1,5 +1,8 @@
+const { uploadFile } = require("../middleware/cloudinary");
 const ClientModel = require("../models/clientModel");
 const mongoose = require("mongoose");
+const fs = require("fs");
+const generateInvoiceNumber = require("../middleware/generateInvoiceNumber");
 
 const counterSchema = new mongoose.Schema({
   _id: { type: String, required: true },
@@ -95,6 +98,7 @@ exports.getClients = async (req, res) => {
       tmeLeads,
       startDate,
       endDate,
+      clientId,
     } = req.query;
 
     const pageNumber = parseInt(page);
@@ -102,6 +106,10 @@ exports.getClients = async (req, res) => {
     const skip = (pageNumber - 1) * limitNumber;
 
     const matchStage = {};
+
+    if (clientId) {
+      matchStage.clientId = clientId;
+    }
 
     if (bdeName) {
       matchStage.bdeName = new mongoose.Types.ObjectId(bdeName);
@@ -370,6 +378,210 @@ exports.updateClient = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Error updating client",
+      error: error.message,
+    });
+  }
+};
+
+exports.updateInvoice = async (req, res) => {
+  try {
+    const { clientId } = req.params;
+
+    if (!clientId) {
+      return res.status(400).json({
+        success: false,
+        message: "Client ID is required",
+      });
+    }
+
+    const { invoiceData, dueDate, savePdf } = req.body;
+
+    if (!invoiceData || !Array.isArray(invoiceData)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invoice data is required and should be an array",
+      });
+    }
+
+    if (req.files && req.files.savePdf) {
+      const file = req.files.savePdf;
+
+      const uploadResult = await uploadFile(file.tempFilePath, file.mimetype);
+
+      savePdf = {
+        secure_url: uploadResult.secure_url,
+        public_id: uploadResult.public_id,
+      };
+
+      fs.unlink(file.tempFilePath, (err) => {
+        if (err) {
+          console.error("Error deleting temp file:", err);
+        }
+      });
+    }
+
+    const invoiceNumber = await generateInvoiceNumber();
+
+    const invoice = {
+      invoiceNumber,
+      dueDate,
+      savePdf: {
+        secure_url: savePdf?.secure_url,
+        public_id: savePdf?.public_id,
+      },
+      invoiceData,
+    };
+
+    const updatedClient = await ClientModel.findOneAndUpdate(
+      { clientId },
+      {
+        $push: { invoice: invoice },
+      },
+      { new: true }
+    )
+      .populate("businessName")
+      .populate("bdeName")
+      .populate("tmeLeads");
+
+    if (!updatedClient) {
+      return res.status(404).json({
+        success: false,
+        message: "Client not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Invoice added successfully",
+      client: updatedClient,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Error updating invoice",
+      error: error.message,
+    });
+  }
+};
+
+exports.updateInvoiceData = async (req, res) => {
+  try {
+    const { clientId, invoiceId } = req.params;
+
+    if (!clientId || !invoiceId) {
+      return res.status(400).json({
+        success: false,
+        message: "Client ID and Invoice ID are required",
+      });
+    }
+
+    const invoiceUpdate = {};
+
+    if (req.files && req.files.savePdf) {
+      const file = req.files.savePdf;
+
+      const uploadResult = await uploadFile(file.tempFilePath, file.mimetype);
+
+      const savePdf = {
+        secure_url: uploadResult.secure_url,
+        public_id: uploadResult.public_id,
+      };
+
+      invoiceUpdate.savePdf = savePdf;
+
+      fs.unlink(file.tempFilePath, (err) => {
+        if (err) {
+          console.error("Error deleting temp file:", err);
+        }
+      });
+    }
+
+    if (req.body.invoiceData) {
+      if (typeof req.body.invoiceData === "string") {
+        invoiceUpdate.invoiceData = JSON.parse(req.body.invoiceData);
+      } else {
+        invoiceUpdate.invoiceData = req.body.invoiceData;
+      }
+    }
+
+    if (req.body.dueDate) {
+      invoiceUpdate.dueDate = req.body.dueDate;
+    }
+
+    const updatedClient = await ClientModel.findOneAndUpdate(
+      { clientId, "invoice._id": invoiceId },
+      {
+        $set: {
+          "invoice.$.invoiceData": invoiceUpdate.invoiceData,
+          "invoice.$.dueDate": invoiceUpdate.dueDate,
+          "invoice.$.savePdf": invoiceUpdate.savePdf,
+        },
+      },
+      { new: true }
+    )
+      .populate("businessName")
+      .populate("bdeName")
+      .populate("tmeLeads");
+
+    if (!updatedClient) {
+      return res.status(404).json({
+        success: false,
+        message: "Client or Invoice not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Invoice updated successfully",
+      client: updatedClient,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Error updating invoice data",
+      error: error.message,
+    });
+  }
+};
+
+exports.deleteInvoice = async (req, res) => {
+  try {
+    const { clientId, invoiceId } = req.params;
+
+    if (!clientId || !invoiceId) {
+      return res.status(400).json({
+        success: false,
+        message: "Client ID and Invoice ID are required",
+      });
+    }
+
+    const updatedClient = await ClientModel.findOneAndUpdate(
+      { clientId },
+      {
+        $pull: { invoice: { _id: invoiceId } },
+      },
+      { new: true }
+    )
+      .populate("businessName")
+      .populate("bdeName")
+      .populate("tmeLeads");
+
+    if (!updatedClient) {
+      return res.status(404).json({
+        success: false,
+        message: "Client or Invoice not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Invoice deleted successfully",
+      client: updatedClient,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Error deleting invoice",
       error: error.message,
     });
   }
