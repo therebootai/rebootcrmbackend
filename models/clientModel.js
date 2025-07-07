@@ -30,6 +30,48 @@ const monthlyPaymentAmountSchema = new mongoose.Schema({
     default: Date.now,
   },
 });
+const invoiceDataSchema = new mongoose.Schema({
+  serviceName: {
+    type: String,
+  },
+  productCode: {
+    type: String,
+  },
+  quantity: {
+    type: String,
+  },
+  rate: {
+    type: String,
+  },
+  amount: {
+    type: String,
+  },
+  description: {
+    type: String,
+  },
+});
+
+const invoiceSchema = new mongoose.Schema({
+  invoiceNumber: {
+    type: String,
+  },
+  dueDate: {
+    type: String,
+  },
+  isDraft: {
+    type: Boolean,
+    default: false,
+  },
+  savePdf: {
+    secure_url: {
+      type: String,
+    },
+    public_id: {
+      type: String,
+    },
+  },
+  invoiceData: [invoiceDataSchema],
+});
 
 const clientSchema = new mongoose.Schema({
   clientId: {
@@ -78,6 +120,7 @@ const clientSchema = new mongoose.Schema({
   cleardAmount: [cleardAmountSchema],
   monthlyPaymentAmount: [monthlyPaymentAmountSchema],
   remarks: { type: String },
+  invoice: [invoiceSchema],
   createdAt: {
     type: Date,
     default: Date.now,
