@@ -24,31 +24,6 @@ exports.login = async (req, res) => {
         return res.status(400).json({ message: "Invalid credentials" });
       }
 
-      const now = new Date();
-      const today = now.toISOString().split("T")[0];
-      const entryTime = now.toLocaleTimeString("en-US", { hour12: false });
-
-      const existingAttendanceIndex = user.attendence_list.findIndex(
-        (att) => att.date && att.date.toISOString().split("T")[0] === today
-      );
-
-      if (existingAttendanceIndex === -1) {
-        user.attendence_list.push({
-          date: now,
-          entry_time: entryTime,
-          exit_time: "",
-          day_count: "0",
-        });
-      } else {
-        user.attendence_list.push({
-          date: now,
-          entry_time: entryTime,
-          exit_time: "",
-          day_count: "0",
-        });
-      }
-      await user.save(); // Save the updated user document
-
       const token = jwt.sign(
         {
           id: user._id,
@@ -65,6 +40,7 @@ exports.login = async (req, res) => {
         name: user.bdename,
         role: "bde",
         id: user.bdeId,
+        user,
       });
     }
 
@@ -425,6 +401,121 @@ exports.logout = async (req, res) => {
       return res.status(404).json({ message: "User not found in database." });
     }
 
+    res.status(200).json({
+      message: "Logged out successfully. Attendance updated.",
+    });
+  } catch (error) {
+    console.error("Logout error:", error);
+    res
+      .status(500)
+      .json({ message: "Internal server error. Please try again." });
+  }
+};
+
+exports.checkInUser = async (req, res) => {
+  try {
+    if (!req.user || !req.userType) {
+      return res.status(401).json({
+        message: "Authentication required. User not identified.",
+        success: false,
+      });
+    }
+    let user;
+    switch (userType) {
+      case "bde":
+        user = await BDE.findById(userId);
+        break;
+      case "telecaller":
+        user = await Telecaller.findById(userId);
+        break;
+      case "digitalMarketer":
+        user = await DigitalMarketer.findById(userId);
+        break;
+      default:
+        return res.status(400).json({
+          message: "Invalid user type provided by token.",
+          success: false,
+        });
+    }
+
+    if (!user) {
+      return res
+        .status(404)
+        .json({ message: "User not found in database.", success: false });
+    }
+    const userId = req.user._id;
+    const userType = req.userType;
+    const now = new Date();
+    const today = now.toISOString().split("T")[0];
+    const entryTime = now.toLocaleTimeString("en-US", { hour12: false });
+
+    const existingAttendanceIndex = user.attendence_list.findIndex(
+      (att) => att.date && att.date.toISOString().split("T")[0] === today
+    );
+
+    if (existingAttendanceIndex === -1) {
+      user.attendence_list.push({
+        date: now,
+        entry_time: entryTime,
+        exit_time: "",
+        day_count: "0",
+      });
+    } else {
+      user.attendence_list.push({
+        date: now,
+        entry_time: entryTime,
+        exit_time: "",
+        day_count: "0",
+      });
+    }
+    await user.save();
+
+    res.status(200).json({
+      message: "User checked in successfully.",
+      attendanceRecord: user.attendence_list[user.attendence_list.length - 1],
+      success: true,
+    });
+  } catch (error) {
+    console.error("Logout error:", error);
+    res.status(500).json({
+      message: "Internal server error. Please try again.",
+      success: false,
+    });
+  }
+};
+
+exports.checkOutUser = async (req, res) => {
+  try {
+    if (!req.user || !req.userType) {
+      return res
+        .status(401)
+        .json({ message: "Authentication required. User not identified." });
+    }
+
+    const userId = req.user._id;
+    const userType = req.userType;
+
+    let user;
+    switch (userType) {
+      case "bde":
+        user = await BDE.findById(userId);
+        break;
+      case "telecaller":
+        user = await Telecaller.findById(userId);
+        break;
+      case "digitalMarketer":
+        user = await DigitalMarketer.findById(userId);
+        break;
+      default:
+        return res
+          .status(400)
+          .json({ message: "Invalid user type provided by token." });
+    }
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found in database." });
+    }
+
     const now = new Date();
     const today = now.toISOString().split("T")[0]; // Get YYYY-MM-DD
     const exitTime = now.toLocaleTimeString("en-US", { hour12: false }); // Get HH:MM:SS (e.g., 15:30:00)
@@ -494,12 +585,16 @@ exports.logout = async (req, res) => {
     const durationMs = exitDateTime - entryDateTime;
     const durationHours = durationMs / (1000 * 60 * 60); // Convert milliseconds to hours
 
-    // Apply your specific day_count logic
-    if (durationHours >= 8) {
-      attendanceRecord.day_count = "1";
-    } else if (durationHours > 0) {
-      // If duration is greater than 0 but less than 8 hours
+    // Apply the new day_count logic
+    if (entryHours >= 12) {
+      // If entry time is 12 PM (noon) or later
       attendanceRecord.day_count = "0.5";
+    } else if (durationHours < 8 && durationHours > 0) {
+      // If duration is less than 8 hours but greater than 0
+      attendanceRecord.day_count = "0.5";
+    } else if (durationHours >= 8) {
+      // If duration is 8 hours or more
+      attendanceRecord.day_count = "1";
     } else {
       // Handle cases where duration is 0 or negative (shouldn't happen with correct logic)
       attendanceRecord.day_count = "0";
@@ -508,13 +603,14 @@ exports.logout = async (req, res) => {
     await user.save(); // Save the updated user document
 
     res.status(200).json({
-      message: "Logged out successfully. Attendance updated.",
+      message: "Check out successfully. Attendance updated.",
       attendanceRecord: attendanceRecord, // Return the updated record for confirmation
     });
   } catch (error) {
-    console.error("Logout error:", error);
-    res
-      .status(500)
-      .json({ message: "Internal server error. Please try again." });
+    console.error("Check out error:", error);
+    res.status(500).json({
+      message: "Internal server error. Please try again.",
+      success: false,
+    });
   }
 };

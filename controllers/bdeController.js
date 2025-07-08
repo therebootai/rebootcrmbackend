@@ -91,7 +91,9 @@ exports.getBDEById = async (req, res) => {
 
     const bdes = await BDE.findOne({
       bdeId,
-    });
+    })
+      .populate("employee_ref")
+      .select("-password");
     if (!bdes) {
       return res.status(404).json({ message: "BDE not found" });
     }
