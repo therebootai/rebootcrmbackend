@@ -3,6 +3,7 @@ const ClientModel = require("../models/clientModel");
 const mongoose = require("mongoose");
 const fs = require("fs");
 const generateInvoiceNumber = require("../middleware/generateInvoiceNumber");
+const invoiceCounter = require("../models/invoiceCounter");
 
 const counterSchema = new mongoose.Schema({
   _id: { type: String, required: true },
@@ -394,7 +395,7 @@ exports.updateInvoice = async (req, res) => {
       });
     }
 
-    const { invoiceData, dueDate, savePdf } = req.body;
+    const { invoiceData, dueDate, savePdf, previousPayment } = req.body;
 
     if (!invoiceData || !Array.isArray(invoiceData)) {
       return res.status(400).json({
@@ -425,6 +426,7 @@ exports.updateInvoice = async (req, res) => {
     const invoice = {
       invoiceNumber,
       dueDate,
+      previousPayment,
       savePdf: {
         secure_url: savePdf?.secure_url,
         public_id: savePdf?.public_id,
@@ -508,12 +510,18 @@ exports.updateInvoiceData = async (req, res) => {
       invoiceUpdate.dueDate = req.body.dueDate;
     }
 
+    if (req.body.previousPayment) {
+      invoiceUpdate.previousPayment = req.body.previousPayment;
+    }
+
     const updatedClient = await ClientModel.findOneAndUpdate(
       { clientId, "invoice._id": invoiceId },
       {
         $set: {
           "invoice.$.invoiceData": invoiceUpdate.invoiceData,
           "invoice.$.dueDate": invoiceUpdate.dueDate,
+          "invoice.$.previousPayment": invoiceUpdate.previousPayment,
+
           "invoice.$.savePdf": invoiceUpdate.savePdf,
         },
       },
