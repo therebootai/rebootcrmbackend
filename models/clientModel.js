@@ -62,6 +62,7 @@ const invoiceSchema = new mongoose.Schema({
     type: Boolean,
     default: false,
   },
+  previousPayment: { type: String },
   savePdf: {
     secure_url: {
       type: String,
