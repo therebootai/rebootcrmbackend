@@ -540,16 +540,14 @@ exports.getBusiness = async (req, res) => {
     const grandTotalBusinesses = await business.countDocuments({});
     // --- MODIFIED END ---
 
-    const [FollowupCount, visitCount, dealCloseCount] = await Promise.all([
-      business.countDocuments({ ...filter, status: "Followup" }), // Uses 'filter' (includes date filters)
-      bdeId
-        ? business.countDocuments({ ...filter, status: "Visited" }) // Uses 'filter' (includes date filters)
-        : business.countDocuments({
-            ...filter,
-            status: "Appointment Generated",
-          }), // Uses 'filter' (includes date filters)
-      business.countDocuments({ ...filter, status: "Deal Closed" }), // Uses 'filter' (includes date filters)
-    ]);
+    const [FollowupCount, appointmentCount, visitCount, dealCloseCount] =
+      await Promise.all([
+        business.countDocuments({ ...filter, status: "Followup" }), // Uses 'filter' (includes date filters)
+        business.countDocuments({ ...filter, status: "Appointment Generated" }),
+        business.countDocuments({ ...filter, status: "Visited" }),
+
+        business.countDocuments({ ...filter, status: "Deal Closed" }), // Uses 'filter' (includes date filters)
+      ]);
 
     // --- Send Response ---
     res.status(200).json({
@@ -560,6 +558,7 @@ exports.getBusiness = async (req, res) => {
       statuscount: {
         grandTotalBusinesses,
         FollowupCount,
+        appointmentCount,
         visitCount,
         dealCloseCount,
         created_business_count,
