@@ -194,7 +194,21 @@ exports.getBusiness = async (req, res) => {
       baseFilter.buisnessname = { $regex: businessname, $options: "i" };
     }
     if (status) {
-      baseFilter.status = status;
+      const statusesToIncludeReason = [
+        "Followup",
+        "Not Interested",
+        "Deal Closed",
+      ];
+      if (statusesToIncludeReason.includes(status)) {
+        // If the status is one of the specific ones, use an $or condition
+        baseFilter.$or = [
+          { status: status },
+          { "visit_result.reason": status },
+        ];
+      } else {
+        // Otherwise, use the simple status filter
+        baseFilter.status = status;
+      }
     }
     if (source) {
       baseFilter.source = source;
