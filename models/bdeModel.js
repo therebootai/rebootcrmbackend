@@ -37,6 +37,17 @@ const bdeSchema = new Schema({
       entry_time: { type: String },
       exit_time: { type: String },
       day_count: { type: String },
+      status: {
+        type: String,
+        enum: ["present", "absent", "leave", "holiday"],
+        default: "absent",
+      },
+      leave_reason: { type: String },
+      leave_approval: {
+        type: String,
+        enum: ["approved", "rejected", "pending"],
+        default: "pending",
+      },
     },
   ],
   created_business: {
@@ -48,6 +59,10 @@ const bdeSchema = new Schema({
     type: mongoose.Types.ObjectId,
     required: true,
     ref: "Employee",
+  },
+  apptoken: {
+    type: String,
+    default: "",
   },
 });
 
