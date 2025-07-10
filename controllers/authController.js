@@ -605,3 +605,317 @@ exports.checkOutUser = async (req, res) => {
     });
   }
 };
+
+exports.applyLeave = async (req, res) => {
+  try {
+    if (!req.user || !req.userType) {
+      return res.status(401).json({
+        message: "Authentication required. User not identified.",
+        success: false,
+      });
+    }
+
+    const userId = req.user._id;
+    const userType = req.userType;
+
+    let user;
+    switch (userType) {
+      case "bde":
+        user = await BDE.findById(userId);
+        break;
+      case "telecaller":
+        user = await Telecaller.findById(userId);
+        break;
+      case "digitalMarketer":
+        user = await DigitalMarketer.findById(userId);
+        break;
+      default:
+        return res.status(400).json({
+          message: "Invalid user type provided by token.",
+          success: false,
+        });
+    }
+
+    if (!user) {
+      return res.status(404).json({
+        message: "User not found in database.",
+        success: false,
+      });
+    }
+
+    const { date, leave_reason } = req.body;
+
+    // Normalize the requested leave date to YYYY-MM-DD for comparison
+    // Ensure date is a valid Date object from req.body
+    const requestedLeaveDate = new Date(date);
+    if (isNaN(requestedLeaveDate.getTime())) {
+      return res.status(400).json({
+        message: "Invalid date provided for leave request.",
+        success: false,
+      });
+    }
+    const requestedLeaveDateString = requestedLeaveDate
+      .toISOString()
+      .split("T")[0];
+
+    // Find if an attendance record for this specific date already exists
+    let existingAttendanceRecord = user.attendence_list.find((att) => {
+      // Handle cases where att.date is missing or invalid
+      if (!att.date) return false;
+      const recordDate = new Date(att.date);
+      if (isNaN(recordDate.getTime())) return false; // If att.date is an invalid date string
+
+      return (
+        recordDate.toISOString().split("T")[0] === requestedLeaveDateString
+      );
+    });
+
+    if (existingAttendanceRecord) {
+      // Scenario 1: Record exists for the date
+      if (existingAttendanceRecord.entry_time) {
+        // If entry_time is present, user already checked in for that day.
+        // Cannot request full-day leave if already checked in.
+        return res.status(400).json({
+          message: `Cannot request leave for ${requestedLeaveDateString}. You have already checked in for this day.`,
+          success: false,
+        });
+      } else {
+        // Record exists but no entry_time (e.g., default 'absent' record, or previous leave request)
+        // Update this existing record for leave
+        existingAttendanceRecord.status = "leave";
+        existingAttendanceRecord.leave_reason = leave_reason;
+        existingAttendanceRecord.leave_approval = "pending";
+        // Ensure entry_time and exit_time are explicitly cleared for a leave day
+        existingAttendanceRecord.entry_time = "";
+        existingAttendanceRecord.exit_time = "";
+        existingAttendanceRecord.day_count = "0"; // A leave day typically counts as 0 work days
+      }
+    } else {
+      // Scenario 2: No record exists for the date. Create a new one.
+      const newLeaveRecord = {
+        date: requestedLeaveDate, // Store the full Date object for the leave date
+        entry_time: "", // No entry time for a leave day
+        exit_time: "", // No exit time for a leave day
+        day_count: "0", // A leave day typically counts as 0 work days
+        status: "leave",
+        leave_reason: leave_reason,
+        leave_approval: "pending",
+      };
+      user.attendence_list.push(newLeaveRecord);
+      existingAttendanceRecord = newLeaveRecord; // Set for response
+    }
+
+    await user.save(); // Save the updated user document
+
+    res.status(200).json({
+      message: "Leave request submitted successfully.",
+      attendanceRecord: existingAttendanceRecord, // Return the updated/new record
+      success: true,
+    });
+  } catch (error) {
+    console.error("Leave request error:", error);
+    res.status(500).json({
+      message: "Internal server error. Please try again.",
+      success: false,
+    });
+  }
+};
+
+exports.getLeaveRequests = async (req, res) => {
+  try {
+    // Optional: Add authentication/authorization here if only certain roles can view leave requests
+    // e.g., if (!req.user || !req.userType || (req.userType !== 'admin' && req.user._id.toString() !== req.query.userId)) { ... }
+
+    const { userId, userType, status, startDate, endDate } = req.query; // status refers to leave_approval status
+
+    let queryFilter = {};
+    if (userId) {
+      queryFilter._id = userId; // Filter for a specific user
+    }
+
+    // Date range filter for leave requests
+    if (startDate || endDate) {
+      const dateConditions = {};
+      if (startDate) {
+        const startOfDay = new Date(startDate);
+        startOfDay.setUTCHours(0, 0, 0, 0); // Start of the day in UTC
+        dateConditions.$gte = startOfDay;
+      }
+      if (endDate) {
+        const endOfDay = new Date(endDate);
+        endOfDay.setUTCHours(23, 59, 59, 999); // End of the day in UTC
+        dateConditions.$lte = endOfDay;
+      }
+      // Note: Mongoose's $elemMatch is for finding documents where an array element matches ALL criteria.
+      // We'll filter in-memory after fetching if we need complex subdocument matching.
+      // For simple date range on 'date' field, it's fine.
+      queryFilter["attendence_list.date"] = dateConditions;
+    }
+
+    const userModels = [BDE, Telecaller, DigitalMarketer, User];
+    let allLeaveRequests = [];
+
+    for (const Model of userModels) {
+      // If a specific userType is requested, skip other models
+      if (
+        userType &&
+        Model.modelName.toLowerCase() !== userType.toLowerCase()
+      ) {
+        continue;
+      }
+
+      // Find users based on queryFilter (e.g., specific userId if provided)
+      const users = await Model.find(queryFilter);
+
+      users.forEach((user) => {
+        user.attendence_list.forEach((att) => {
+          // Filter for leave records
+          if (att.status === "leave") {
+            // Apply leave_approval status filter if provided
+            if (status && att.leave_approval !== status) {
+              return; // Skip if status doesn't match
+            }
+
+            // Apply date range filter in-memory if it wasn't applied directly to the Mongoose query
+            // This is safer for subdocuments with date ranges.
+            if (startDate || endDate) {
+              const attDate = new Date(att.date);
+              if (isNaN(attDate.getTime())) return; // Skip invalid dates
+
+              const startOfDay = startDate ? new Date(startDate) : null;
+              if (startOfDay) startOfDay.setUTCHours(0, 0, 0, 0);
+
+              const endOfDay = endDate ? new Date(endDate) : null;
+              if (endOfDay) endOfDay.setUTCHours(23, 59, 59, 999);
+
+              if (startOfDay && attDate < startOfDay) return;
+              if (endOfDay && attDate > endOfDay) return;
+            }
+
+            allLeaveRequests.push({
+              userId: user._id,
+              userType: Model.modelName.toLowerCase(),
+              userName:
+                user.name ||
+                user.email ||
+                user.telecallerId ||
+                user.bdeId ||
+                user.digitalMarketerId, // Adjust based on your user model's name field
+              attendanceRecordId: att._id,
+              date: att.date,
+              leave_reason: att.leave_reason,
+              leave_approval: att.leave_approval,
+              status: att.status, // Should be 'leave'
+            });
+          }
+        });
+      });
+    }
+
+    res.status(200).json({
+      message: "Leave requests fetched successfully.",
+      leaveRequests: allLeaveRequests,
+      totalCount: allLeaveRequests.length,
+      success: true,
+    });
+  } catch (error) {
+    console.error("Error fetching leave requests:", error);
+    res.status(500).json({
+      message: "Internal server error. Please try again.",
+      success: false,
+    });
+  }
+};
+
+// --- NEW: updateLeaveRequest Controller Function ---
+exports.updateLeaveRequest = async (req, res) => {
+  try {
+    if (!req.user || !req.userType) {
+      return res.status(401).json({
+        message: "Authentication required. User not identified.",
+        success: false,
+      });
+    }
+
+    // Assuming an admin or a manager role can update leave requests
+    // You might want to add a more specific role check here:
+    // if (req.userType !== 'admin' && req.userType !== 'manager') {
+    //   return res.status(403).json({ message: "Forbidden: Only authorized roles can update leave requests.", success: false });
+    // }
+
+    const { userId, recordId } = req.params; // Get userId and recordId from URL parameters
+    const { leave_approval } = req.body; // Get new approval status from body
+
+    // Validate leave_approval value
+    const validApprovalStatuses = ["approved", "rejected", "pending"];
+    if (!validApprovalStatuses.includes(leave_approval)) {
+      return res.status(400).json({
+        message:
+          "Invalid leave_approval status provided. Must be 'approved', 'rejected', or 'pending'.",
+        success: false,
+      });
+    }
+
+    // Find the user by userId
+    let user;
+    if (mongoose.Types.ObjectId.isValid(userId)) {
+      user =
+        (await BDE.findById(userId)) ||
+        (await Telecaller.findById(userId)) ||
+        (await DigitalMarketer.findById(userId)) ||
+        (await User.findById(userId)); // Fallback generic user
+    }
+
+    if (!user) {
+      return res.status(404).json({
+        message: "User not found in database.",
+        success: false,
+      });
+    }
+
+    // Find the specific attendance record within the user's attendence_list
+    const attendanceRecord = user.attendence_list.id(recordId); // Mongoose's .id() method for subdocuments
+
+    if (!attendanceRecord) {
+      return res.status(404).json({
+        message: "Leave request record not found for this user and ID.",
+        success: false,
+      });
+    }
+
+    // Ensure it's actually a leave request before updating approval
+    if (attendanceRecord.status !== "leave") {
+      return res.status(400).json({
+        message:
+          "Cannot update approval for a record that is not a leave request.",
+        success: false,
+      });
+    }
+
+    // Update the leave_approval status
+    attendanceRecord.leave_approval = leave_approval;
+
+    // Optional: You might want to update the main 'status' field based on approval
+    // For example, if approved, maybe change status to 'approved_leave' if your enum supports it.
+    // For now, we'll keep it as 'leave' as per schema.
+    // if (leave_approval === "approved") {
+    //   attendanceRecord.status = "approved_leave"; // Requires 'approved_leave' in your enum
+    // } else if (leave_approval === "rejected") {
+    //   attendanceRecord.status = "rejected_leave"; // Requires 'rejected_leave' in your enum
+    // }
+
+    await user.save(); // Save the updated user document
+
+    res.status(200).json({
+      message: `Leave request ${recordId} for user ${userId} updated to ${leave_approval}.`,
+      updatedRecord: attendanceRecord,
+      success: true,
+    });
+  } catch (error) {
+    console.error("Error updating leave request:", error);
+    res.status(500).json({
+      message: "Internal server error. Please try again.",
+      success: false,
+    });
+  }
+};
