@@ -126,9 +126,16 @@ exports.updateBDE = async (req, res) => {
       status,
       password,
       created_business,
+      apptoken,
     } = req.body;
 
-    const bdeUpdate = await BDE.findOne({ bdeId });
+    const bdeUpdate = await BDE.findOne({
+      $or: [
+        { bdeId },
+        { _id: mongoose.Types.ObjectId.isValid(bdeId) ? bdeId : null },
+      ],
+    });
+
     if (!bdeUpdate) {
       return res.status(404).json({ message: "BDE not found" });
     }
@@ -136,6 +143,7 @@ exports.updateBDE = async (req, res) => {
     bdeUpdate.bdename = bdename || bdeUpdate.bdename;
     bdeUpdate.mobileNumber = mobileNumber || bdeUpdate.mobileNumber;
     bdeUpdate.organizationrole = organizationrole || bdeUpdate.organizationrole;
+    bdeUpdate.apptoken = apptoken || bdeUpdate.apptoken;
     if (status !== undefined) {
       bdeUpdate.status = status;
     }
@@ -249,45 +257,6 @@ exports.clearTargetsFromBDE = async (req, res) => {
   } catch (error) {
     console.error("Error deleting targets:", error.message);
     res.status(500).json({ message: "Error deleting targets", error });
-  }
-};
-
-exports.loginBde = async (req, res) => {
-  const { mobileNumber, password } = req.body;
-
-  if (!mobileNumber || !password) {
-    return res.status(400).json({ message: "All fields are required" });
-  }
-
-  try {
-    const bdes = await BDE.findOne({ mobileNumber });
-
-    if (!bdes) {
-      return res.status(400).json({ message: "Invalid credentials" });
-    }
-
-    const isMatch = await bcrypt.compare(password, bdes.password);
-    if (!isMatch) {
-      return res.status(400).json({ message: "Invalid credentials" });
-    }
-
-    const token = jwt.sign(
-      {
-        id: bdes._id,
-        mobileNumber: bdes.mobileNumber,
-        name: bdes.bdename,
-      },
-      process.env.SECRET_KEY,
-      { expiresIn: "30d" }
-    );
-
-    res.status(200).json({
-      telecaller,
-      token,
-      bdename: bdes.bdename,
-    });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
   }
 };
 

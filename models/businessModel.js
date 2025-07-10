@@ -30,6 +30,10 @@ const businessSchema = new Schema({
     reason: { type: String },
     follow_up_date: { type: Date },
     visit_time: { type: String },
+    update_location: {
+      latitude: { type: String },
+      longitude: { type: String },
+    },
   },
 });
 

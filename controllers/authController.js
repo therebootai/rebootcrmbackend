@@ -55,32 +55,6 @@ exports.login = async (req, res) => {
         return res.status(400).json({ message: "Invalid credentials" });
       }
 
-      const now = new Date();
-      const today = now.toISOString().split("T")[0]; // Get YYYY-MM-DD
-      const entryTime = now.toLocaleTimeString("en-US", { hour12: false }); // Get HH:MM:SS
-
-      const existingAttendanceIndex = user.attendence_list.findIndex(
-        (att) => att.date && att.date.toISOString().split("T")[0] === today
-      );
-
-      if (existingAttendanceIndex === -1) {
-        user.attendence_list.push({
-          date: now,
-          entry_time: entryTime,
-          exit_time: "",
-          day_count: "0",
-        });
-      } else {
-        // If you want a new entry for each login on the same day:
-        user.attendence_list.push({
-          date: now,
-          entry_time: entryTime,
-          exit_time: "",
-          day_count: "0",
-        });
-      }
-      await user.save();
-
       const token = jwt.sign(
         {
           id: user._id,
@@ -110,32 +84,6 @@ exports.login = async (req, res) => {
       if (!isMatch) {
         return res.status(400).json({ message: "Invalid credentials" });
       }
-
-      const now = new Date();
-      const today = now.toISOString().split("T")[0]; // Get YYYY-MM-DD
-      const entryTime = now.toLocaleTimeString("en-US", { hour12: false }); // Get HH:MM:SS
-
-      const existingAttendanceIndex = user.attendence_list.findIndex(
-        (att) => att.date && att.date.toISOString().split("T")[0] === today
-      );
-
-      if (existingAttendanceIndex === -1) {
-        user.attendence_list.push({
-          date: now,
-          entry_time: entryTime,
-          exit_time: "",
-          day_count: "0",
-        });
-      } else {
-        // If you want a new entry for each login on the same day:
-        user.attendence_list.push({
-          date: now,
-          entry_time: entryTime,
-          exit_time: "",
-          day_count: "0",
-        });
-      }
-      await user.save();
 
       const token = jwt.sign(
         {
@@ -420,6 +368,13 @@ exports.checkInUser = async (req, res) => {
         success: false,
       });
     }
+
+    // Declare userId and userType at the beginning of the try block
+    const userId = req.user._id;
+    const userType = req.userType;
+    const now = new Date();
+    const today = now.toISOString().split("T")[0]; // "YYYY-MM-DD" for comparison
+
     let user;
     switch (userType) {
       case "bde":
@@ -439,44 +394,66 @@ exports.checkInUser = async (req, res) => {
     }
 
     if (!user) {
-      return res
-        .status(404)
-        .json({ message: "User not found in database.", success: false });
+      return res.status(404).json({
+        message: "User not found in database.",
+        success: false,
+      });
     }
-    const userId = req.user._id;
-    const userType = req.userType;
-    const now = new Date();
-    const today = now.toISOString().split("T")[0];
-    const entryTime = now.toLocaleTimeString("en-US", { hour12: false });
 
-    const existingAttendanceIndex = user.attendence_list.findIndex(
-      (att) => att.date && att.date.toISOString().split("T")[0] === today
+    // Check for an existing open attendance record for today
+    const existingOpenAttendance = user.attendence_list.find(
+      (att) =>
+        att.date &&
+        att.date.toISOString().split("T")[0] === today &&
+        !att.exit_time // Check if exit_time is not set (implies open record)
     );
 
-    if (existingAttendanceIndex === -1) {
-      user.attendence_list.push({
-        date: now,
-        entry_time: entryTime,
-        exit_time: "",
-        day_count: "0",
-      });
-    } else {
-      user.attendence_list.push({
-        date: now,
-        entry_time: entryTime,
-        exit_time: "",
-        day_count: "0",
+    if (existingOpenAttendance) {
+      return res.status(409).json({
+        // 409 Conflict indicates resource already exists/is in a state that conflicts
+        message: "You are already checked in for today.",
+        success: false,
+        attendanceRecord: existingOpenAttendance,
       });
     }
+
+    // Optional: Check if the user has already completed a check-in/out for today
+    // If you want to allow only ONE complete attendance cycle per day.
+    const existingCompletedAttendance = user.attendence_list.find(
+      (att) =>
+        att.date &&
+        att.date.toISOString().split("T")[0] === today &&
+        att.exit_time // Check if exit_time is set (implies completed record)
+    );
+
+    if (existingCompletedAttendance) {
+      return res.status(409).json({
+        message:
+          "You have already completed your attendance for today. Multiple check-ins are not allowed.",
+        success: false,
+        attendanceRecord: existingCompletedAttendance,
+      });
+    }
+
+    // If no existing open or completed record for today, create a new one
+    const newAttendanceRecord = {
+      date: now, // Store the full date for easy querying
+      entry_time: now, // Store the full Date object including time
+      exit_time: null, // Initialize as null or undefined, to be filled on checkout
+      day_count: "0", // Default to "0", will be calculated on checkout
+      status: "present", // User is now present
+    };
+
+    user.attendence_list.push(newAttendanceRecord);
     await user.save();
 
     res.status(200).json({
       message: "User checked in successfully.",
-      attendanceRecord: user.attendence_list[user.attendence_list.length - 1],
+      attendanceRecord: newAttendanceRecord, // Return the newly created record
       success: true,
     });
   } catch (error) {
-    console.error("Logout error:", error);
+    console.error("Check-in error:", error);
     res.status(500).json({
       message: "Internal server error. Please try again.",
       success: false,
@@ -487,13 +464,16 @@ exports.checkInUser = async (req, res) => {
 exports.checkOutUser = async (req, res) => {
   try {
     if (!req.user || !req.userType) {
-      return res
-        .status(401)
-        .json({ message: "Authentication required. User not identified." });
+      return res.status(401).json({
+        message: "Authentication required. User not identified.",
+        success: false, // Added for consistency
+      });
     }
 
     const userId = req.user._id;
     const userType = req.userType;
+    const now = new Date();
+    const today = now.toISOString().split("T")[0]; // "YYYY-MM-DD" for comparison
 
     let user;
     switch (userType) {
@@ -507,104 +487,115 @@ exports.checkOutUser = async (req, res) => {
         user = await DigitalMarketer.findById(userId);
         break;
       default:
-        return res
-          .status(400)
-          .json({ message: "Invalid user type provided by token." });
+        return res.status(400).json({
+          message: "Invalid user type provided by token.",
+          success: false, // Added for consistency
+        });
     }
 
     if (!user) {
-      return res.status(404).json({ message: "User not found in database." });
-    }
-
-    const now = new Date();
-    const today = now.toISOString().split("T")[0]; // Get YYYY-MM-DD
-    const exitTime = now.toLocaleTimeString("en-US", { hour12: false }); // Get HH:MM:SS (e.g., 15:30:00)
-
-    // Find the most recent attendance entry for today that doesn't have an exit_time
-    // We reverse to find the latest open entry for the current day
-    const attendanceListCopy = [...user.attendence_list].reverse(); // Create a shallow copy to reverse
-    const latestAttendanceIndexInReversed = attendanceListCopy.findIndex(
-      (att) =>
-        att.date &&
-        att.date.toISOString().split("T")[0] === today &&
-        !att.exit_time
-    );
-
-    if (latestAttendanceIndexInReversed === -1) {
-      return res.status(400).json({
-        message: "No open attendance record found for today to mark exit.",
+      return res.status(404).json({
+        message: "User not found in database.",
+        success: false,
       });
     }
 
-    // Calculate the actual index in the original (non-reversed) array
-    const actualIndex =
-      user.attendence_list.length - 1 - latestAttendanceIndexInReversed;
-    const attendanceRecord = user.attendence_list[actualIndex];
-
-    // Ensure entry_time exists before proceeding
-    if (!attendanceRecord.entry_time) {
-      return res
-        .status(500)
-        .json({ message: "Corrupted attendance record: missing entry time." });
+    // Find the attendance record for today that has an entry_time but no exit_time
+    // We iterate backwards to find the most recent check-in, though with "one check-in per day",
+    // there should ideally be only one such record.
+    let targetAttendanceIndex = -1;
+    for (let i = user.attendence_list.length - 1; i >= 0; i--) {
+      const att = user.attendence_list[i];
+      // Check if it's today's record and exit_time is not set (meaning it's an open record)
+      if (
+        att.date &&
+        att.date.toISOString().split("T")[0] === today &&
+        !att.exit_time
+      ) {
+        targetAttendanceIndex = i;
+        break; // Found the most recent open record for today
+      }
     }
 
-    // Set exit time
-    attendanceRecord.exit_time = exitTime;
+    if (targetAttendanceIndex === -1) {
+      return res.status(400).json({
+        message: "No open check-in record found for today to mark exit.",
+        success: false,
+      });
+    }
+
+    const attendanceRecord = user.attendence_list[targetAttendanceIndex];
+
+    // Ensure entry_time exists before proceeding (should be present if checkInUser worked)
+    if (!attendanceRecord.entry_time) {
+      return res.status(500).json({
+        message: "Corrupted attendance record: missing entry time.",
+        success: false,
+      });
+    }
+
+    // Set exit time using the current Date object
+    attendanceRecord.exit_time = now;
 
     // --- Calculate day_count based on your specific logic ---
-    const [entryHours, entryMinutes, entrySeconds] = attendanceRecord.entry_time
-      .split(":")
-      .map(Number);
-    const [exitHours, exitMinutes, exitSeconds] = exitTime
-      .split(":")
-      .map(Number);
+    const entryDateTime = new Date(attendanceRecord.entry_time); // Ensure it's a Date object
+    const exitDateTime = new Date(attendanceRecord.exit_time); // Ensure it's a Date object
 
-    // Create Date objects using a dummy date for time calculations
-    const entryDateTime = new Date(
-      2000,
-      0,
-      1,
-      entryHours,
-      entryMinutes,
-      entrySeconds
-    );
-    let exitDateTime = new Date(
-      2000,
-      0,
-      1,
-      exitHours,
-      exitMinutes,
-      exitSeconds
-    );
+    // Calculate duration in milliseconds
+    let durationMs = exitDateTime.getTime() - entryDateTime.getTime();
 
-    // Handle overnight shifts: if exit time is earlier than entry time, assume it's on the next day
-    if (exitDateTime < entryDateTime) {
-      exitDateTime.setDate(exitDateTime.getDate() + 1);
+    // Handle potential overnight shifts (if entry time is late evening and exit is early morning next day)
+    // This part of the logic assumes that the entry and exit are for the same *calendar day*.
+    // If an overnight shift means entry is one day and exit is the *next* day,
+    // your 'today' comparison will not find the entry and this logic needs re-evaluation.
+    // For typical office hours, this check below might not be strictly necessary if you
+    // expect check-in and check-out to always be on the same calendar date.
+    if (durationMs < 0) {
+      // This implies the exit time is chronologically before the entry time on the same date.
+      // This usually indicates an error or a misunderstanding of timestamps.
+      // If it's a genuine overnight shift, the 'today' comparison in findIndex would fail to match.
+      // For simplicity and clarity, assuming same-day check-in/out for now.
+      // If overnight shifts are a primary concern, you'd need to consider a different way
+      // to find the 'open' record that spans days.
+      console.warn(
+        "Negative duration detected. Entry:",
+        entryDateTime,
+        "Exit:",
+        exitDateTime
+      );
+      durationMs = 0; // Or handle as an error, or adjust logic if multi-day shifts are expected.
     }
 
-    const durationMs = exitDateTime - entryDateTime;
     const durationHours = durationMs / (1000 * 60 * 60); // Convert milliseconds to hours
 
-    // Apply the new day_count logic
-    if (entryHours >= 12) {
-      // If entry time is 12 PM (noon) or later
-      attendanceRecord.day_count = "0.5";
-    } else if (durationHours < 8 && durationHours > 0) {
-      // If duration is less than 8 hours but greater than 0
-      attendanceRecord.day_count = "0.5";
-    } else if (durationHours >= 8) {
-      // If duration is 8 hours or more
+    // Apply the day_count logic - Refined based on common attendance policies:
+    // (This is a more typical way to define full/half day based on duration,
+    // rather than just entry time, but you can adjust to your specific needs)
+    if (durationHours >= 8) {
+      // Assuming 8 hours is a full workday
       attendanceRecord.day_count = "1";
+      attendanceRecord.status = "present"; // User is present for a full day
+    } else if (durationHours >= 4) {
+      // Assuming 4 hours is a half workday
+      attendanceRecord.day_count = "0.5";
+      attendanceRecord.status = "present"; // User is present for a half day
+    } else if (durationHours > 0) {
+      // If worked but less than half day threshold, still mark as 0.5 or 0 based on policy
+      // This case might be tricky; you might want to consider it 0.5 or 0.
+      attendanceRecord.day_count = "0.5"; // Or "0" if very short duration means no count
+      attendanceRecord.status = "present"; // Still present, just for short duration
     } else {
-      // Handle cases where duration is 0 or negative (shouldn't happen with correct logic)
+      // Duration is 0 or negative (should not happen with correct data/logic flow)
       attendanceRecord.day_count = "0";
+      attendanceRecord.status = "absent"; // Consider absent if no work done after check-in
     }
 
     await user.save(); // Save the updated user document
 
     res.status(200).json({
-      message: "Check out successfully. Attendance updated.",
+      message: "Check out successful. Attendance updated.",
       attendanceRecord: attendanceRecord, // Return the updated record for confirmation
+      success: true, // Added for consistency
     });
   } catch (error) {
     console.error("Check out error:", error);

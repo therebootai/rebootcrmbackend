@@ -12,4 +12,7 @@ router.put("/employees/reset-password", authController.resetPassword);
 
 router.get("/logout", checkAuth, authController.logout);
 
+router.post("/user/check-in", checkAuth, authController.checkInUser);
+router.post("/user/check-out", checkAuth, authController.checkOutUser);
+
 module.exports = router;
