@@ -752,7 +752,7 @@ exports.getLeaveRequests = async (req, res) => {
       queryFilter["attendence_list.date"] = dateConditions;
     }
 
-    const userModels = [BDE, Telecaller, DigitalMarketer, User];
+    const userModels = [BDE, Telecaller, DigitalMarketer];
     let allLeaveRequests = [];
 
     for (const Model of userModels) {
