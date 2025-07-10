@@ -11,7 +11,6 @@ router.post("/addTarget/:bdeId", bdeController.addTargetToBDE);
 router.put("/updatetarget/:bdeId", bdeController.updateTargetAchievement);
 
 router.delete("/clearTargets/:bdeId", bdeController.clearTargetsFromBDE);
-router.post("/login", bdeController.loginBde);
 router.post("/assignBusiness/:bdeId", bdeController.assignBusiness);
 router.post(
   "/removeAssignedBusiness/:bdeId",
