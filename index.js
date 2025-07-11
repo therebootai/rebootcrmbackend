@@ -86,7 +86,7 @@ app.use("/api/blogs", blogRoutes);
 app.use("/api/jobpost", careerJobPostRoutes);
 app.use("/api/applications", applicationRoutes);
 app.use("/api/client", clientRoute);
-app.use("/api.notifications", notificationRoutes);
+app.use("/api/notifications", notificationRoutes);
 
 const sendFCMNotification = async (
   targetTokenOrTopic,
@@ -307,10 +307,10 @@ app.post("/api/send-notification", async (req, res) => {
 
 const checkAndNotifyLateCheckinsLogic = async () => {
   const checkTimeHour = 11; // 12 PM
-  const checkTimeMinute = 50; // 0 minutes
+  const checkTimeMinute = 30; // 0 minutes
   const notificationTitle = "Reminder: Check-in Time!";
   const notificationBody =
-    "It's past 12 PM. Please remember to check in for today's attendance.";
+    "It's past 11:30 AM. Please remember to check in for today's attendance.";
   const notificationCustomData = { type: "checkin_reminder", urgency: "high" };
 
   try {
@@ -331,7 +331,7 @@ const checkAndNotifyLateCheckinsLogic = async () => {
     }
 
     const usersToNotify = [];
-    const userModels = [BDE, Telecaller, DigitalMarketer, User];
+    const userModels = [bdeModel, telecallerModel, digitalMarketerModel];
 
     for (const Model of userModels) {
       const users = await Model.find({});
@@ -445,9 +445,9 @@ app.post("/api/check-and-notify-late-checkins", async (req, res) => {
 });
 
 cron.schedule(
-  "50 11 * * *",
+  "30 11 * * *",
   async () => {
-    console.log("Running scheduled check-in reminder at 11:50 AM IST...");
+    console.log("Running scheduled check-in reminder at 11:30 AM IST...");
     await checkAndNotifyLateCheckinsLogic();
   },
   {
