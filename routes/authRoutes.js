@@ -15,10 +15,10 @@ router.get("/logout", checkAuth, authController.logout);
 router.post("/user/check-in", checkAuth, authController.checkInUser);
 router.post("/user/check-out", checkAuth, authController.checkOutUser);
 
-router.post("/api/leave/request", checkAuth, authController.applyLeave);
-router.get("/api/leave/requests", authController.getLeaveRequests);
+router.post("/leave/request", checkAuth, authController.applyLeave);
+router.get("/leave/requests", authController.getLeaveRequests);
 router.put(
-  "/api/leave/requests/:userId/:recordId",
+  "/leave/requests/:userId/:recordId",
   authController.updateLeaveRequest
 );
 
