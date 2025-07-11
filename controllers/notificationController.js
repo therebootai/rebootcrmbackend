@@ -1,5 +1,5 @@
 const notificationModel = require("../models/notificationModel");
-
+const mongoose = require("mongoose");
 exports.getNotifications = async (req, res) => {
   try {
     const {
@@ -51,7 +51,7 @@ exports.getNotifications = async (req, res) => {
     // Fetch notifications from the database
     const notifications = await notificationModel
       .find(filter)
-      .sort({ sentAt: -1 }) // Sort by most recent first
+      .sort({ sentAt: -1, createdAt: -1 }) // Sort by most recent first
       .skip(skip)
       .limit(itemsPerPage);
 

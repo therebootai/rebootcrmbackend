@@ -265,18 +265,13 @@ exports.getBusiness = async (req, res) => {
       const endDate = new Date(followupenddate);
       endDate.setUTCHours(23, 59, 59, 999);
       filter.followUpDate = { $gte: startDate, $lte: endDate };
-      filter.$and.push({
-        "visit_result.follow_up_date": { $gte: startDate, $lte: endDate },
-      });
     } else if (followupstartdate) {
       const startDate = new Date(followupstartdate);
       filter.followUpDate = { $gte: startDate };
-      filter.$and.push({ "visit_result.follow_up_date": { $gte: startDate } });
     } else if (followupenddate) {
       const endDate = new Date(followupenddate);
       endDate.setUTCHours(23, 59, 59, 999);
       filter.followUpDate = { $lte: endDate };
-      filter.$and.push({ "visit_result.follow_up_date": { $lte: endDate } });
     }
 
     if (appointmentstartdate && appointmentenddate) {
