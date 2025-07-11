@@ -55,6 +55,7 @@ const bdeModel = require("./models/bdeModel");
 const telecallerModel = require("./models/telecallerModel");
 const digitalMarketerModel = require("./models/digitalMarketerModel");
 const notificationModel = require("./models/notificationModel");
+const businessModel = require("./models/businessModel");
 
 app.use(cors());
 
@@ -443,6 +444,174 @@ app.post("/api/check-and-notify-late-checkins", async (req, res) => {
     res.status(200).json(result);
   }
 });
+
+const sendFollowupAndAppointmentRemindersLogic = async () => {
+  const notificationTitle = "Today's Follow-up & Appointment Reminders";
+
+  try {
+    console.log(
+      "Running scheduled follow-up and appointment reminders at 10:30 AM IST..."
+    );
+
+    const todayIST = new Date(
+      new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
+    );
+    todayIST.setHours(0, 0, 0, 0);
+
+    const tomorrowIST = new Date(todayIST);
+    tomorrowIST.setDate(tomorrowIST.getDate() + 1);
+
+    const userModels = [bdeModel, telecallerModel, digitalMarketerModel];
+    const userTypeMap = {
+      bde: bdeModel,
+      telecaller: telecallerModel,
+      digitalMarketer: digitalMarketerModel,
+    };
+
+    // An array to collect all the notification promises
+    const notificationPromises = [];
+
+    // --- New: Iterate through each user type and fetch their assignments ---
+    for (const Model of userModels) {
+      const users = await Model.find({
+        status: "active",
+        apptoken: { $exists: true },
+      });
+
+      for (const user of users) {
+        let assignedCategories = [];
+        let assignedCities = [];
+        let filter = {
+          $and: [
+            {
+              $or: [
+                { followUpDate: { $gte: todayIST, $lt: tomorrowIST } },
+                { appointmentDate: { $gte: todayIST, $lt: tomorrowIST } },
+              ],
+            },
+            {
+              $or: [
+                { status: "Followup" },
+                { "visit_result.reason": "Followup" },
+                { status: "Appointment Generated" },
+              ],
+            },
+          ],
+        };
+
+        // Get user's specific assignments
+        if (user.assignCategories && Array.isArray(user.assignCategories)) {
+          assignedCategories = user.assignCategories.map((c) =>
+            c.category.trim()
+          );
+        }
+        if (user.assignCities && Array.isArray(user.assignCities)) {
+          assignedCities = user.assignCities.map((c) => c.city.trim());
+        }
+
+        // Add the user-specific filters to the query
+        if (assignedCategories.length > 0) {
+          filter.$and.push({ category: { $in: assignedCategories } });
+        }
+        if (assignedCities.length > 0) {
+          filter.$and.push({ city: { $in: assignedCities } });
+        }
+
+        // --- New: Use user's ID for specific filtering ---
+        const userIdField = user.bdeId
+          ? "bdeId"
+          : user.telecallerId
+          ? "telecallerId"
+          : "digitalMarketerId";
+        filter.$and.push({ [userIdField]: user[userIdField] });
+
+        // Count relevant businesses for THIS specific user
+        const followupCount = await businessModel.countDocuments({
+          ...filter,
+          $and: [
+            ...filter.$and,
+            {
+              $or: [
+                { status: "Followup" },
+                { "visit_result.reason": "Followup" },
+              ],
+            },
+          ],
+        });
+
+        const appointmentCount = await businessModel.countDocuments({
+          ...filter,
+          $and: [...filter.$and, { status: "Appointment Generated" }],
+        });
+
+        // If there are any businesses to follow up on, send the notification
+        if (followupCount > 0 || appointmentCount > 0) {
+          const body = `You have ${followupCount} follow-ups and ${appointmentCount} appointments scheduled for today.`;
+          const message = {
+            notification: { title: notificationTitle, body: body },
+            data: {
+              type: "followup_appointment_reminder",
+              followups: String(followupCount),
+              appointments: String(appointmentCount),
+              userId: String(user._id),
+            },
+          };
+          notificationPromises.push(
+            sendFCMNotification(user.apptoken, message, user._id, null)
+          );
+        }
+      }
+    }
+
+    const results = await Promise.allSettled(notificationPromises);
+
+    const successfulSends = results.filter(
+      (r) => r.status === "fulfilled" && r.value.success
+    ).length;
+    const failedSends = results.filter(
+      (r) =>
+        r.status === "rejected" ||
+        (r.status === "fulfilled" && !r.value.success)
+    ).length;
+
+    console.log(
+      `Attempted to send reminders. Successful: ${successfulSends}, Failed: ${failedSends}`
+    );
+    return {
+      message: `Attempted to send reminders.`,
+      successfulSends,
+      failedSends,
+    };
+  } catch (error) {
+    console.error("Error in sendFollowupAndAppointmentRemindersLogic:", error);
+    return {
+      message: "Internal server error during reminder process.",
+      error: error.message,
+    };
+  }
+};
+
+app.post("/api/send-followup-reminders", async (req, res) => {
+  const result = await sendFollowupAndAppointmentRemindersLogic();
+  if (result.error) {
+    res.status(500).json(result);
+  } else {
+    res.status(200).json(result);
+  }
+});
+
+cron.schedule(
+  "48 20 * * *",
+  async () => {
+    console.log(
+      "Running scheduled follow-up and appointment reminder at 10:30 AM IST..."
+    );
+    await sendFollowupAndAppointmentRemindersLogic();
+  },
+  {
+    timezone: "Asia/Kolkata", // Explicitly set timezone for cron job
+  }
+);
 
 cron.schedule(
   "30 11 * * *",

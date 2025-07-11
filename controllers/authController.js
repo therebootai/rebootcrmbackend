@@ -244,32 +244,65 @@ exports.verifyWithOtp = async (req, res) => {
       otpStorage[formattedPhone].otp === otp &&
       otpStorage[formattedPhone].expiresAt > Date.now()
     ) {
-      let user =
-        (await BDE.findOne({ mobileNumber: phone })) ||
-        (await Telecaller.findOne({ mobileNumber: phone })) ||
-        (await DigitalMarketer.findOne({ mobileNumber: phone }));
+      let user = null;
+      let role = null;
+      let nameField = null;
+      let idField = null;
 
+      // Find user and determine their role in a single, clean block
+      user = await BDE.findOne({ mobileNumber: phone });
+      if (user) {
+        role = "bde";
+        nameField = "bdename";
+        idField = "bdeId";
+      }
+
+      if (!user) {
+        user = await Telecaller.findOne({ mobileNumber: phone });
+        if (user) {
+          role = "telecaller";
+          nameField = "telecallername";
+          idField = "telecallerId";
+        }
+      }
+
+      if (!user) {
+        user = await DigitalMarketer.findOne({ mobileNumber: phone });
+        if (user) {
+          role = "digitalMarketer";
+          nameField = "digitalMarketername";
+          idField = "digitalMarketerId";
+        }
+      }
+
+      // Check if user was found and is not deactivated
       if (!user) {
         return res.status(404).json({ message: "User not found" });
       }
+      if (user.status === "inactive") {
+        return res.status(400).json({ message: "User is deactivated" });
+      }
 
-      const role = user.bdename
-        ? "bde"
-        : user.telecallername
-        ? "telecaller"
-        : "digitalMarketer";
-      const name =
-        user.bdename || user.telecallername || user.digitalMarketername;
-      const id = user.bdeId || user.telecallerId || user.digitalMarketerId;
+      // Extract details for JWT payload and response
+      const name = user[nameField];
+      const id = user[idField];
 
+      // Sign the JWT token with a consistent payload
       const token = jwt.sign(
-        { id: user._id.toString(), phone: user.mobileNumber, name },
+        {
+          id: user._id,
+          mobileNumber: user.mobileNumber,
+          name: name,
+          userType: role, // Using a consistent key with your login controller
+        },
         process.env.SECRET_KEY,
         { expiresIn: "30d" }
       );
 
+      // Clean up the used OTP
       delete otpStorage[formattedPhone];
 
+      // Send a consistent and complete response
       return res.json({
         success: true,
         message: "OTP verified successfully, user logged in",
@@ -277,6 +310,7 @@ exports.verifyWithOtp = async (req, res) => {
         name,
         role,
         id,
+        user, // Returning the full user object for consistency with BDE login
       });
     } else {
       return res
