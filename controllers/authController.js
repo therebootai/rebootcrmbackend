@@ -424,6 +424,7 @@ exports.checkInUser = async (req, res) => {
       (att) =>
         att.date &&
         att.date.toISOString().split("T")[0] === today &&
+        att.status === "present" &&
         att.exit_time // Check if exit_time is set (implies completed record)
     );
 
