@@ -4,6 +4,7 @@ const DigitalMarketer = require("../models/digitalMarketerModel");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const axios = require("axios");
+const mongoose = require("mongoose");
 
 exports.login = async (req, res) => {
   const { mobileNumber, password } = req.body;
@@ -795,17 +796,17 @@ exports.getLeaveRequests = async (req, res) => {
             allLeaveRequests.push({
               userId: user._id,
               userType: Model.modelName.toLowerCase(),
-              userName:
-                user.name ||
-                user.email ||
-                user.telecallerId ||
-                user.bdeId ||
-                user.digitalMarketerId, // Adjust based on your user model's name field
+
+              userCId:
+                user.telecallerId || user.bdeId || user.digitalMarketerId,
+
+              userName: user.bdename,
+              userNumber: user.mobileNumber,
               attendanceRecordId: att._id,
               date: att.date,
               leave_reason: att.leave_reason,
               leave_approval: att.leave_approval,
-              status: att.status, // Should be 'leave'
+              status: att.status,
             });
           }
         });
@@ -830,12 +831,12 @@ exports.getLeaveRequests = async (req, res) => {
 // --- NEW: updateLeaveRequest Controller Function ---
 exports.updateLeaveRequest = async (req, res) => {
   try {
-    if (!req.user || !req.userType) {
-      return res.status(401).json({
-        message: "Authentication required. User not identified.",
-        success: false,
-      });
-    }
+    // if (!req.user || !req.userType) {
+    //   return res.status(401).json({
+    //     message: "Authentication required. User not identified.",
+    //     success: false,
+    //   });
+    // }
 
     // Assuming an admin or a manager role can update leave requests
     // You might want to add a more specific role check here:
