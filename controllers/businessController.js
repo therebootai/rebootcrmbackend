@@ -182,27 +182,33 @@ exports.getBusiness = async (req, res) => {
     const page = parseInt(req.query.page) > 0 ? parseInt(req.query.page) : 1;
 
     let baseFilter = {};
-    let filter = {}; // Main filter for fetching businesses (includes all filters)
-    let totalCountFilterForCreatedAndOverallWithoutDates = {}; // This was your original totalCountFilter
-    let createdCountFilter = {}; // Specific filter for created_business_count (without dates)
+    let filter = {};
+    let createdCountFilter = {};
 
-    // --- Common Filters (applied to baseFilter first) ---
-    if (mobileNumber) {
+    // --- Common Filters ---
+    if (mobileNumber)
       baseFilter.mobileNumber = { $regex: mobileNumber, $options: "i" };
-    }
-    if (businessname) {
+    if (businessname)
       baseFilter.buisnessname = { $regex: businessname, $options: "i" };
-    }
     if (status) {
-      baseFilter.status = status;
+      const statusesToIncludeReason = [
+        "Followup",
+        "Not Interested",
+        "Deal Closed",
+      ];
+      if (statusesToIncludeReason.includes(status)) {
+        baseFilter.$or = [
+          { status: status },
+          { "visit_result.reason": status },
+        ];
+      } else {
+        baseFilter.status = status;
+      }
     }
-    if (source) {
-      baseFilter.source = source;
-    }
+    if (source) baseFilter.source = source;
 
-    // Clone baseFilter into the specific filters
+    // Clone baseFilter into specific filters
     Object.assign(filter, baseFilter);
-    Object.assign(totalCountFilterForCreatedAndOverallWithoutDates, baseFilter); // This will be used for created_business_count and a general total if needed
     Object.assign(createdCountFilter, baseFilter);
 
     // Helper function for category/city filters
@@ -213,11 +219,11 @@ exports.getBusiness = async (req, res) => {
     ) => {
       const catConditions = [];
       if (category) catConditions.push(category);
-      catConditions.push(...categories); // Add assigned categories
+      catConditions.push(...categories);
 
       const cityConditions = [];
       if (city) cityConditions.push(city);
-      cityConditions.push(...cities); // Add assigned cities
+      cityConditions.push(...cities);
 
       const andConditions = [];
       if (catConditions.length > 0) {
@@ -233,72 +239,52 @@ exports.getBusiness = async (req, res) => {
       }
     };
 
-    // Apply general category/city filters from req.query to all relevant filters
+    // Apply general category/city filters
     applyCategoryCityFilter(filter);
-    applyCategoryCityFilter(totalCountFilterForCreatedAndOverallWithoutDates);
     applyCategoryCityFilter(createdCountFilter);
 
-    // Initialize arrays for top-level AND conditions for all filters
-    if (!filter.$and) filter.$and = [];
-    if (!totalCountFilterForCreatedAndOverallWithoutDates.$and)
-      totalCountFilterForCreatedAndOverallWithoutDates.$and = [];
-    if (!createdCountFilter.$and) createdCountFilter.$and = [];
+    // --- Date Filters (APPLIED ONLY TO 'filter') ---
+    const dateConditions = [];
 
-    // --- Date Filters (APPLIED ONLY TO 'filter' object) ---
-    // These date filters are NOT applied to totalCountFilterForCreatedAndOverallWithoutDates or createdCountFilter
-    if (followupstartdate && followupenddate) {
-      const startDate = new Date(followupstartdate);
-      const endDate = new Date(followupenddate);
-      endDate.setUTCHours(23, 59, 59, 999);
-      filter.followUpDate = { $gte: startDate, $lte: endDate };
-      filter.$and.push({
-        "visit_result.follow_up_date": { $gte: startDate, $lte: endDate },
-      });
-    } else if (followupstartdate) {
-      const startDate = new Date(followupstartdate);
-      filter.followUpDate = { $gte: startDate };
-      filter.$and.push({ "visit_result.follow_up_date": { $gte: startDate } });
-    } else if (followupenddate) {
-      const endDate = new Date(followupenddate);
-      endDate.setUTCHours(23, 59, 59, 999);
-      filter.followUpDate = { $lte: endDate };
-      filter.$and.push({ "visit_result.follow_up_date": { $lte: endDate } });
+    if (followupstartdate || followupenddate) {
+      const filter = {};
+      if (followupstartdate) filter.$gte = new Date(followupstartdate);
+      if (followupenddate) {
+        const endDate = new Date(followupenddate);
+        endDate.setUTCHours(23, 59, 59, 999);
+        filter.$lte = endDate;
+      }
+      dateConditions.push({ followUpDate: filter });
+    }
+    if (appointmentstartdate || appointmentenddate) {
+      const filter = {};
+      if (appointmentstartdate) filter.$gte = new Date(appointmentstartdate);
+      if (appointmentenddate) {
+        const endDate = new Date(appointmentenddate);
+        endDate.setUTCHours(23, 59, 59, 999);
+        filter.$lte = endDate;
+      }
+      dateConditions.push({ appointmentDate: filter });
+    }
+    if (createdstartdate || createdenddate) {
+      const filter = {};
+      if (createdstartdate) filter.$gte = new Date(createdstartdate);
+      if (createdenddate) {
+        const endDate = new Date(createdenddate);
+        endDate.setUTCHours(23, 59, 59, 999);
+        filter.$lte = endDate;
+      }
+      dateConditions.push({ createdAt: filter });
+    }
+    if (dateConditions.length > 0) {
+      if (!filter.$and) filter.$and = [];
+      filter.$and.push({ $or: dateConditions });
     }
 
-    if (appointmentstartdate && appointmentenddate) {
-      const startDate = new Date(appointmentstartdate);
-      const endDate = new Date(appointmentenddate);
-      endDate.setUTCHours(23, 59, 59, 999);
-      filter.appointmentDate = { $gte: startDate, $lte: endDate };
-    } else if (appointmentstartdate) {
-      const startDate = new Date(appointmentstartdate);
-      filter.appointmentDate = { $gte: startDate };
-    } else if (appointmentenddate) {
-      const endDate = new Date(appointmentenddate);
-      endDate.setUTCHours(23, 59, 59, 999);
-      filter.appointmentDate = { $lte: endDate };
-    }
+    let targetUserFound = false;
+    let createdBusinessIdsToCount = [];
 
-    if (createdstartdate && createdenddate) {
-      const startDate = new Date(createdstartdate);
-      const endDate = new Date(createdenddate);
-      endDate.setUTCHours(23, 59, 59, 999);
-      filter.createdAt = { $gte: startDate, $lte: endDate };
-    } else if (createdstartdate) {
-      const startDate = new Date(createdstartdate);
-      filter.createdAt = { $gte: startDate };
-    } else if (createdenddate) {
-      const endDate = new Date(createdenddate);
-      endDate.setUTCHours(23, 59, 59, 999);
-      filter.createdAt = { $lte: endDate };
-    }
-
-    let targetUserFound = false; // Flag to check if any specific user ID was used for created_business_count
-    let createdBusinessIdsToCount = []; // Collect IDs for the created_business_count filter
-
-    // --- Prioritized Created Business Count Logic (applies to createdCountFilter) ---
-
-    // 1. createdBy (Highest Priority)
+    // --- Prioritized User Filters ---
     if (createdBy) {
       targetUserFound = true;
       let creatorUser = null;
@@ -339,27 +325,20 @@ exports.getBusiness = async (req, res) => {
           ),
         ]);
 
-      if (bdeUser) {
-        creatorUser = bdeUser;
-      } else if (telecallerUser) {
-        creatorUser = telecallerUser;
-      } else if (digitalMarketerUser) {
-        creatorUser = digitalMarketerUser;
-      } else if (adminUser) {
-        creatorUser = adminUser;
-      }
+      if (bdeUser) creatorUser = bdeUser;
+      else if (telecallerUser) creatorUser = telecallerUser;
+      else if (digitalMarketerUser) creatorUser = digitalMarketerUser;
+      else if (adminUser) creatorUser = adminUser;
 
-      if (!creatorUser) {
-        createdBusinessIdsToCount = [];
-        filter.$and.push({ _id: { $in: [] } });
-        createdCountFilter.$and.push({ _id: { $in: [] } });
-      } else {
+      if (creatorUser) {
         if (
           creatorUser.created_business &&
           Array.isArray(creatorUser.created_business)
         ) {
           createdBusinessIdsToCount = creatorUser.created_business;
         }
+        if (!filter.$and) filter.$and = [];
+        if (!createdCountFilter.$and) createdCountFilter.$and = [];
         if (createdBusinessIdsToCount.length > 0) {
           filter.$and.push({ _id: { $in: createdBusinessIdsToCount } });
           createdCountFilter.$and.push({
@@ -369,33 +348,40 @@ exports.getBusiness = async (req, res) => {
           filter.$and.push({ _id: { $in: [] } });
           createdCountFilter.$and.push({ _id: { $in: [] } });
         }
+      } else {
+        if (!filter.$and) filter.$and = [];
+        if (!createdCountFilter.$and) createdCountFilter.$and = [];
+        filter.$and.push({ _id: { $in: [] } });
+        createdCountFilter.$and.push({ _id: { $in: [] } });
       }
     }
-    // 2. telecallerId (Next Priority if createdBy is not present)
+    // 2. telecallerId
     else if (telecallerId) {
       targetUserFound = true;
       const telecaller = await Telecaller.findOne({ telecallerId });
-      if (!telecaller) {
+      if (!telecaller)
         return res.status(404).json({ message: "Telecaller not found" });
-      }
       if (
         telecaller.created_business &&
         Array.isArray(telecaller.created_business)
       ) {
         createdBusinessIdsToCount = telecaller.created_business;
       }
+      const telecallerOrConditions = [{ telecallerId: telecallerId }];
       const assignedCategories = telecaller.assignCategories.map((c) =>
         c.category.trim()
       );
       const assignedCities = telecaller.assignCities.map((c) => c.city.trim());
-      const telecallerOrConditions = [{ telecallerId: telecallerId }];
       if (assignedCategories.length > 0)
         telecallerOrConditions.push({ category: { $in: assignedCategories } });
       if (assignedCities.length > 0)
         telecallerOrConditions.push({ city: { $in: assignedCities } });
+
       if (telecallerOrConditions.length > 0) {
+        if (!filter.$and) filter.$and = [];
         filter.$and.push({ $or: telecallerOrConditions });
       }
+      if (!createdCountFilter.$and) createdCountFilter.$and = [];
       if (createdBusinessIdsToCount.length > 0) {
         createdCountFilter.$and.push({
           _id: { $in: createdBusinessIdsToCount },
@@ -404,13 +390,11 @@ exports.getBusiness = async (req, res) => {
         createdCountFilter.$and.push({ _id: { $in: [] } });
       }
     }
-    // 3. bdeId (Lowest Priority if createdBy and telecallerId are not present)
+    // 3. bdeId
     else if (bdeId) {
       targetUserFound = true;
       const bde = await BDE.findOne({ bdeId });
-      if (!bde) {
-        return res.status(404).json({ message: "BDE not found" });
-      }
+      if (!bde) return res.status(404).json({ message: "BDE not found" });
       if (bde.created_business && Array.isArray(bde.created_business)) {
         createdBusinessIdsToCount = bde.created_business;
       }
@@ -436,8 +420,10 @@ exports.getBusiness = async (req, res) => {
           bdeOrConditions.push({ city: { $in: bdeAssignedCities } });
       }
       if (bdeOrConditions.length > 0) {
+        if (!filter.$and) filter.$and = [];
         filter.$and.push({ $or: bdeOrConditions });
       }
+      if (!createdCountFilter.$and) createdCountFilter.$and = [];
       if (createdBusinessIdsToCount.length > 0) {
         createdCountFilter.$and.push({
           _id: { $in: createdBusinessIdsToCount },
@@ -446,26 +432,24 @@ exports.getBusiness = async (req, res) => {
         createdCountFilter.$and.push({ _id: { $in: [] } });
       }
     }
-    // 4. digitalMarketerId (Handle separately, if it should combine with other roles)
+    // 4. digitalMarketerId
     if (digitalMarketerId) {
       const digitalMarketer = await DigitalMarketer.findOne({
         digitalMarketerId,
       });
-      if (!digitalMarketer) {
+      if (!digitalMarketer)
         return res.status(404).json({ message: "Digital Marketer not found" });
-      }
       const assignedCategories = digitalMarketer.assignCategories.map(
         (c) => c.category
       );
       const assignedCities = digitalMarketer.assignCities.map((c) => c.city);
       const dmOrConditions = [];
-      if (assignedCategories.length > 0) {
+      if (assignedCategories.length > 0)
         dmOrConditions.push({ category: { $in: assignedCategories } });
-      }
-      if (assignedCities.length > 0) {
+      if (assignedCities.length > 0)
         dmOrConditions.push({ city: { $in: assignedCities } });
-      }
       if (dmOrConditions.length > 0) {
+        if (!filter.$and) filter.$and = [];
         filter.$and.push({ $or: dmOrConditions });
       }
       if (
@@ -474,6 +458,7 @@ exports.getBusiness = async (req, res) => {
         Array.isArray(digitalMarketer.created_business)
       ) {
         createdBusinessIdsToCount = digitalMarketer.created_business;
+        if (!createdCountFilter.$and) createdCountFilter.$and = [];
         if (createdBusinessIdsToCount.length > 0) {
           createdCountFilter.$and.push({
             _id: { $in: createdBusinessIdsToCount },
@@ -484,30 +469,13 @@ exports.getBusiness = async (req, res) => {
       }
     }
 
-    // Finalize createdCountFilter based on the priority chain
-    if (!targetUserFound && createdBusinessIdsToCount.length === 0) {
-      // This block ensures that if no specific user was found (createdBy, telecallerId, bdeId, digitalMarketerId),
-      // the createdCountFilter doesn't get an unnecessary `_id: { $in: [] }` if it should count all.
-      // It should already be a clone of baseFilter + general category/city filters.
-    }
-
     // Clean up empty $and arrays from all filters
-    if (filter.$and && filter.$and.length === 0) {
-      delete filter.$and;
-    }
-    if (
-      totalCountFilterForCreatedAndOverallWithoutDates.$and &&
-      totalCountFilterForCreatedAndOverallWithoutDates.$and.length === 0
-    ) {
-      delete totalCountFilterForCreatedAndOverallWithoutDates.$and;
-    }
-    if (createdCountFilter.$and && createdCountFilter.$and.length === 0) {
+    if (filter.$and && filter.$and.length === 0) delete filter.$and;
+    if (createdCountFilter.$and && createdCountFilter.$and.length === 0)
       delete createdCountFilter.$and;
-    }
 
     // --- Sorting ---
-    let sort = {};
-    sort = { tagAppointment: -1 };
+    let sort = { tagAppointment: -1 };
     if (appointmentDate === "true") {
       sort.appointmentDate = -1;
     } else {
@@ -518,35 +486,27 @@ exports.getBusiness = async (req, res) => {
     const pageNumber = Math.max(1, parseInt(page));
     const skip = (pageNumber - 1) * parseInt(limit);
 
-    // --- Fetch Businesses ---
-    const businesses = await business
-      .find(filter) // Uses 'filter' (includes ALL filters, including date filters)
-      .sort(sort)
-      .skip(skip)
-      .limit(parseInt(limit));
+    // --- Fetch Businesses and Counts ---
+    const [
+      businesses,
+      filteredBusinessesCount,
+      created_business_count,
+      grandTotalBusinesses,
+    ] = await Promise.all([
+      business.find(filter).sort(sort).skip(skip).limit(parseInt(limit)),
+      business.countDocuments(filter),
+      business.countDocuments(createdCountFilter),
+      business.countDocuments({}),
+    ]);
 
-    // --- Counts ---
-    // Calculate the total count of businesses matching ALL filters (including dates)
-    const filteredBusinessesCount = await business.countDocuments(filter);
     const totalPages = Math.ceil(filteredBusinessesCount / limit);
-
-    // created_business_count still uses the filter that excludes date criteria
-    const created_business_count = await business.countDocuments(
-      createdCountFilter
-    );
-
-    // --- MODIFIED START ---
-    // New property: Grand total of all businesses in the database (no filters)
-    const grandTotalBusinesses = await business.countDocuments({});
-    // --- MODIFIED END ---
 
     const [FollowupCount, appointmentCount, visitCount, dealCloseCount] =
       await Promise.all([
-        business.countDocuments({ ...filter, status: "Followup" }), // Uses 'filter' (includes date filters)
+        business.countDocuments({ ...filter, status: "Followup" }),
         business.countDocuments({ ...filter, status: "Appointment Generated" }),
         business.countDocuments({ ...filter, status: "Visited" }),
-
-        business.countDocuments({ ...filter, status: "Deal Closed" }), // Uses 'filter' (includes date filters)
+        business.countDocuments({ ...filter, status: "Deal Closed" }),
       ]);
 
     // --- Send Response ---
