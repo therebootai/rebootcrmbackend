@@ -503,10 +503,19 @@ exports.getBusiness = async (req, res) => {
 
     const [FollowupCount, appointmentCount, visitCount, dealCloseCount] =
       await Promise.all([
-        business.countDocuments({ ...filter, status: "Followup" }),
+        business.countDocuments({
+          ...filter,
+          $or: [{ status: "Followup" }, { "visit_result.reason": "Followup" }],
+        }),
         business.countDocuments({ ...filter, status: "Appointment Generated" }),
         business.countDocuments({ ...filter, status: "Visited" }),
-        business.countDocuments({ ...filter, status: "Deal Closed" }),
+        business.countDocuments({
+          ...filter,
+          $or: [
+            { status: "Deal Closed" },
+            { "visit_result.reason": "Deal Closed" },
+          ],
+        }),
       ]);
 
     // --- Send Response ---
