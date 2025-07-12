@@ -397,9 +397,17 @@ exports.logout = async (req, res) => {
 
 exports.checkInUser = async (req, res) => {
   try {
+    const { entry_time_location } = req.body;
     if (!req.user || !req.userType) {
       return res.status(401).json({
         message: "Authentication required. User not identified.",
+        success: false,
+      });
+    }
+
+    if (!entry_time_location) {
+      return res.status(400).json({
+        message: "Entry time locations are required.",
         success: false,
       });
     }
@@ -477,6 +485,7 @@ exports.checkInUser = async (req, res) => {
       entry_time: now, // Store the full Date object including time
       exit_time: null, // Initialize as null or undefined, to be filled on checkout
       day_count: "0", // Default to "0", will be calculated on checkout
+      entry_time_location,
       status: "present", // User is now present
     };
 
@@ -499,9 +508,18 @@ exports.checkInUser = async (req, res) => {
 
 exports.checkOutUser = async (req, res) => {
   try {
+    const { exit_time_location } = req.body;
+
     if (!req.user || !req.userType) {
       return res.status(401).json({
         message: "Authentication required. User not identified.",
+        success: false, // Added for consistency
+      });
+    }
+
+    if (!exit_time_location) {
+      return res.status(400).json({
+        message: "Exit time locations are required.",
         success: false, // Added for consistency
       });
     }
@@ -546,7 +564,8 @@ exports.checkOutUser = async (req, res) => {
       if (
         att.date &&
         att.date.toISOString().split("T")[0] === today &&
-        !att.exit_time
+        !att.exit_time &&
+        att.status === "present"
       ) {
         targetAttendanceIndex = i;
         break; // Found the most recent open record for today

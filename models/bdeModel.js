@@ -35,7 +35,19 @@ const bdeSchema = new Schema({
     {
       date: { type: Date, default: Date.now },
       entry_time: { type: String },
+      entry_time_location: {
+        type: {
+          latitude: { type: String },
+          longitude: { type: String },
+        },
+      },
       exit_time: { type: String },
+      exit_time_location: {
+        type: {
+          latitude: { type: String },
+          longitude: { type: String },
+        },
+      },
       day_count: { type: String },
       status: {
         type: String,
