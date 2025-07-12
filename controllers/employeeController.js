@@ -88,10 +88,10 @@ exports.createEmployee = async (req, res) => {
     const [
       employeeId,
       govtIdUpload,
-      profile_imgUpload,
       experienceLetterUpload,
       bankDetailsUpload,
       agreementUpload,
+      profile_imgUpload,
     ] = await Promise.all(newPromises);
 
     const newEmployee = new Employee({

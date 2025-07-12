@@ -14,7 +14,7 @@ exports.login = async (req, res) => {
   }
 
   try {
-    let user = await BDE.findOne({ mobileNumber });
+    let user = await BDE.findOne({ mobileNumber }).populate("employee_ref");
     if (user) {
       if (user.status === "inactive") {
         return res.status(400).json({ message: "User is deactivated" });
@@ -45,7 +45,7 @@ exports.login = async (req, res) => {
       });
     }
 
-    user = await Telecaller.findOne({ mobileNumber });
+    user = await Telecaller.findOne({ mobileNumber }).populate("employee_ref");
     if (user) {
       if (user.status === "inactive") {
         return res.status(400).json({ message: "User is deactivated" });
@@ -75,7 +75,9 @@ exports.login = async (req, res) => {
       });
     }
 
-    user = await DigitalMarketer.findOne({ mobileNumber });
+    user = await DigitalMarketer.findOne({ mobileNumber }).populate(
+      "employee_ref"
+    );
     if (user) {
       if (user.status === "inactive") {
         return res.status(400).json({ message: "User is deactivated" });
@@ -250,7 +252,9 @@ exports.verifyWithOtp = async (req, res) => {
       let idField = null;
 
       // Find user and determine their role in a single, clean block
-      user = await BDE.findOne({ mobileNumber: phone });
+      user = await BDE.findOne({ mobileNumber: phone }).populate(
+        "employee_ref"
+      );
       if (user) {
         role = "bde";
         nameField = "bdename";
@@ -258,7 +262,9 @@ exports.verifyWithOtp = async (req, res) => {
       }
 
       if (!user) {
-        user = await Telecaller.findOne({ mobileNumber: phone });
+        user = await Telecaller.findOne({ mobileNumber: phone }).populate(
+          "employee_ref"
+        );
         if (user) {
           role = "telecaller";
           nameField = "telecallername";
@@ -267,7 +273,9 @@ exports.verifyWithOtp = async (req, res) => {
       }
 
       if (!user) {
-        user = await DigitalMarketer.findOne({ mobileNumber: phone });
+        user = await DigitalMarketer.findOne({ mobileNumber: phone }).populate(
+          "employee_ref"
+        );
         if (user) {
           role = "digitalMarketer";
           nameField = "digitalMarketername";
@@ -873,19 +881,6 @@ exports.getLeaveRequests = async (req, res) => {
 // --- NEW: updateLeaveRequest Controller Function ---
 exports.updateLeaveRequest = async (req, res) => {
   try {
-    // if (!req.user || !req.userType) {
-    //   return res.status(401).json({
-    //     message: "Authentication required. User not identified.",
-    //     success: false,
-    //   });
-    // }
-
-    // Assuming an admin or a manager role can update leave requests
-    // You might want to add a more specific role check here:
-    // if (req.userType !== 'admin' && req.userType !== 'manager') {
-    //   return res.status(403).json({ message: "Forbidden: Only authorized roles can update leave requests.", success: false });
-    // }
-
     const { userId, recordId } = req.params; // Get userId and recordId from URL parameters
     const { leave_approval } = req.body; // Get new approval status from body
 
