@@ -778,32 +778,26 @@ exports.applyLeave = async (req, res) => {
 
 exports.getLeaveRequests = async (req, res) => {
   try {
-    // Optional: Add authentication/authorization here if only certain roles can view leave requests
-    // e.g., if (!req.user || !req.userType || (req.userType !== 'admin' && req.user._id.toString() !== req.query.userId)) { ... }
-
-    const { userId, userType, status, startDate, endDate } = req.query; // status refers to leave_approval status
+    const { userId, userType, status, startDate, endDate } = req.query;
 
     let queryFilter = {};
     if (userId) {
-      queryFilter._id = userId; // Filter for a specific user
+      queryFilter._id = userId;
     }
 
-    // Date range filter for leave requests
     if (startDate || endDate) {
       const dateConditions = {};
       if (startDate) {
         const startOfDay = new Date(startDate);
-        startOfDay.setUTCHours(0, 0, 0, 0); // Start of the day in UTC
+        startOfDay.setUTCHours(0, 0, 0, 0);
         dateConditions.$gte = startOfDay;
       }
       if (endDate) {
         const endOfDay = new Date(endDate);
-        endOfDay.setUTCHours(23, 59, 59, 999); // End of the day in UTC
+        endOfDay.setUTCHours(23, 59, 59, 999);
         dateConditions.$lte = endOfDay;
       }
-      // Note: Mongoose's $elemMatch is for finding documents where an array element matches ALL criteria.
-      // We'll filter in-memory after fetching if we need complex subdocument matching.
-      // For simple date range on 'date' field, it's fine.
+
       queryFilter["attendence_list.date"] = dateConditions;
     }
 
@@ -811,7 +805,6 @@ exports.getLeaveRequests = async (req, res) => {
     let allLeaveRequests = [];
 
     for (const Model of userModels) {
-      // If a specific userType is requested, skip other models
       if (
         userType &&
         Model.modelName.toLowerCase() !== userType.toLowerCase()
@@ -819,23 +812,18 @@ exports.getLeaveRequests = async (req, res) => {
         continue;
       }
 
-      // Find users based on queryFilter (e.g., specific userId if provided)
       const users = await Model.find(queryFilter);
 
       users.forEach((user) => {
         user.attendence_list.forEach((att) => {
-          // Filter for leave records
           if (att.status === "leave") {
-            // Apply leave_approval status filter if provided
             if (status && att.leave_approval !== status) {
-              return; // Skip if status doesn't match
+              return;
             }
 
-            // Apply date range filter in-memory if it wasn't applied directly to the Mongoose query
-            // This is safer for subdocuments with date ranges.
             if (startDate || endDate) {
               const attDate = new Date(att.date);
-              if (isNaN(attDate.getTime())) return; // Skip invalid dates
+              if (isNaN(attDate.getTime())) return;
 
               const startOfDay = startDate ? new Date(startDate) : null;
               if (startOfDay) startOfDay.setUTCHours(0, 0, 0, 0);
