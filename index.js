@@ -601,7 +601,7 @@ app.post("/api/send-followup-reminders", async (req, res) => {
 });
 
 cron.schedule(
-  "48 20 * * *",
+  "30 10 * * *",
   async () => {
     console.log(
       "Running scheduled follow-up and appointment reminder at 10:30 AM IST..."

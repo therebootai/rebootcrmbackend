@@ -14,7 +14,7 @@ exports.login = async (req, res) => {
   }
 
   try {
-    let user = await BDE.findOne({ mobileNumber });
+    let user = await BDE.findOne({ mobileNumber }).populate("employee_ref");
     if (user) {
       if (user.status === "inactive") {
         return res.status(400).json({ message: "User is deactivated" });
@@ -45,7 +45,7 @@ exports.login = async (req, res) => {
       });
     }
 
-    user = await Telecaller.findOne({ mobileNumber });
+    user = await Telecaller.findOne({ mobileNumber }).populate("employee_ref");
     if (user) {
       if (user.status === "inactive") {
         return res.status(400).json({ message: "User is deactivated" });
@@ -75,7 +75,9 @@ exports.login = async (req, res) => {
       });
     }
 
-    user = await DigitalMarketer.findOne({ mobileNumber });
+    user = await DigitalMarketer.findOne({ mobileNumber }).populate(
+      "employee_ref"
+    );
     if (user) {
       if (user.status === "inactive") {
         return res.status(400).json({ message: "User is deactivated" });
@@ -250,7 +252,9 @@ exports.verifyWithOtp = async (req, res) => {
       let idField = null;
 
       // Find user and determine their role in a single, clean block
-      user = await BDE.findOne({ mobileNumber: phone });
+      user = await BDE.findOne({ mobileNumber: phone }).populate(
+        "employee_ref"
+      );
       if (user) {
         role = "bde";
         nameField = "bdename";
@@ -258,7 +262,9 @@ exports.verifyWithOtp = async (req, res) => {
       }
 
       if (!user) {
-        user = await Telecaller.findOne({ mobileNumber: phone });
+        user = await Telecaller.findOne({ mobileNumber: phone }).populate(
+          "employee_ref"
+        );
         if (user) {
           role = "telecaller";
           nameField = "telecallername";
@@ -267,7 +273,9 @@ exports.verifyWithOtp = async (req, res) => {
       }
 
       if (!user) {
-        user = await DigitalMarketer.findOne({ mobileNumber: phone });
+        user = await DigitalMarketer.findOne({ mobileNumber: phone }).populate(
+          "employee_ref"
+        );
         if (user) {
           role = "digitalMarketer";
           nameField = "digitalMarketername";
@@ -397,9 +405,17 @@ exports.logout = async (req, res) => {
 
 exports.checkInUser = async (req, res) => {
   try {
+    const { entry_time_location } = req.body;
     if (!req.user || !req.userType) {
       return res.status(401).json({
         message: "Authentication required. User not identified.",
+        success: false,
+      });
+    }
+
+    if (!entry_time_location) {
+      return res.status(400).json({
+        message: "Entry time locations are required.",
         success: false,
       });
     }
@@ -477,6 +493,7 @@ exports.checkInUser = async (req, res) => {
       entry_time: now, // Store the full Date object including time
       exit_time: null, // Initialize as null or undefined, to be filled on checkout
       day_count: "0", // Default to "0", will be calculated on checkout
+      entry_time_location,
       status: "present", // User is now present
     };
 
@@ -499,9 +516,18 @@ exports.checkInUser = async (req, res) => {
 
 exports.checkOutUser = async (req, res) => {
   try {
+    const { exit_time_location } = req.body;
+
     if (!req.user || !req.userType) {
       return res.status(401).json({
         message: "Authentication required. User not identified.",
+        success: false, // Added for consistency
+      });
+    }
+
+    if (!exit_time_location) {
+      return res.status(400).json({
+        message: "Exit time locations are required.",
         success: false, // Added for consistency
       });
     }
@@ -546,7 +572,8 @@ exports.checkOutUser = async (req, res) => {
       if (
         att.date &&
         att.date.toISOString().split("T")[0] === today &&
-        !att.exit_time
+        !att.exit_time &&
+        att.status === "present"
       ) {
         targetAttendanceIndex = i;
         break; // Found the most recent open record for today
@@ -759,32 +786,26 @@ exports.applyLeave = async (req, res) => {
 
 exports.getLeaveRequests = async (req, res) => {
   try {
-    // Optional: Add authentication/authorization here if only certain roles can view leave requests
-    // e.g., if (!req.user || !req.userType || (req.userType !== 'admin' && req.user._id.toString() !== req.query.userId)) { ... }
-
-    const { userId, userType, status, startDate, endDate } = req.query; // status refers to leave_approval status
+    const { userId, userType, status, startDate, endDate } = req.query;
 
     let queryFilter = {};
     if (userId) {
-      queryFilter._id = userId; // Filter for a specific user
+      queryFilter._id = userId;
     }
 
-    // Date range filter for leave requests
     if (startDate || endDate) {
       const dateConditions = {};
       if (startDate) {
         const startOfDay = new Date(startDate);
-        startOfDay.setUTCHours(0, 0, 0, 0); // Start of the day in UTC
+        startOfDay.setUTCHours(0, 0, 0, 0);
         dateConditions.$gte = startOfDay;
       }
       if (endDate) {
         const endOfDay = new Date(endDate);
-        endOfDay.setUTCHours(23, 59, 59, 999); // End of the day in UTC
+        endOfDay.setUTCHours(23, 59, 59, 999);
         dateConditions.$lte = endOfDay;
       }
-      // Note: Mongoose's $elemMatch is for finding documents where an array element matches ALL criteria.
-      // We'll filter in-memory after fetching if we need complex subdocument matching.
-      // For simple date range on 'date' field, it's fine.
+
       queryFilter["attendence_list.date"] = dateConditions;
     }
 
@@ -792,7 +813,6 @@ exports.getLeaveRequests = async (req, res) => {
     let allLeaveRequests = [];
 
     for (const Model of userModels) {
-      // If a specific userType is requested, skip other models
       if (
         userType &&
         Model.modelName.toLowerCase() !== userType.toLowerCase()
@@ -800,23 +820,18 @@ exports.getLeaveRequests = async (req, res) => {
         continue;
       }
 
-      // Find users based on queryFilter (e.g., specific userId if provided)
       const users = await Model.find(queryFilter);
 
       users.forEach((user) => {
         user.attendence_list.forEach((att) => {
-          // Filter for leave records
           if (att.status === "leave") {
-            // Apply leave_approval status filter if provided
             if (status && att.leave_approval !== status) {
-              return; // Skip if status doesn't match
+              return;
             }
 
-            // Apply date range filter in-memory if it wasn't applied directly to the Mongoose query
-            // This is safer for subdocuments with date ranges.
             if (startDate || endDate) {
               const attDate = new Date(att.date);
-              if (isNaN(attDate.getTime())) return; // Skip invalid dates
+              if (isNaN(attDate.getTime())) return;
 
               const startOfDay = startDate ? new Date(startDate) : null;
               if (startOfDay) startOfDay.setUTCHours(0, 0, 0, 0);
@@ -866,19 +881,6 @@ exports.getLeaveRequests = async (req, res) => {
 // --- NEW: updateLeaveRequest Controller Function ---
 exports.updateLeaveRequest = async (req, res) => {
   try {
-    // if (!req.user || !req.userType) {
-    //   return res.status(401).json({
-    //     message: "Authentication required. User not identified.",
-    //     success: false,
-    //   });
-    // }
-
-    // Assuming an admin or a manager role can update leave requests
-    // You might want to add a more specific role check here:
-    // if (req.userType !== 'admin' && req.userType !== 'manager') {
-    //   return res.status(403).json({ message: "Forbidden: Only authorized roles can update leave requests.", success: false });
-    // }
-
     const { userId, recordId } = req.params; // Get userId and recordId from URL parameters
     const { leave_approval } = req.body; // Get new approval status from body
 

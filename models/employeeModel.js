@@ -13,22 +13,41 @@ const employeeSchema = new Schema({
   guardianName: { type: String },
   role: { type: String, required: true },
   type: { type: String, required: true },
+  profile_img: {
+    type: {
+      secure_url: { type: String },
+      public_id: { type: String },
+    },
+    default: null,
+  },
   govtId: {
-    secure_url: { type: String, required: true },
-    public_id: { type: String, required: true },
+    type: {
+      secure_url: { type: String },
+      public_id: { type: String },
+    },
+    required: true,
   },
   experienceLetter: {
-    secure_url: { type: String },
-    public_id: { type: String },
+    type: {
+      secure_url: { type: String },
+      public_id: { type: String },
+    },
+    default: null,
   },
   joiningDate: { type: Date, required: true },
   bankDetails: {
-    secure_url: { type: String, required: true },
-    public_id: { type: String, required: true },
+    type: {
+      secure_url: { type: String },
+      public_id: { type: String },
+    },
+    required: true,
   },
   agreement: {
-    secure_url: { type: String },
-    public_id: { type: String },
+    type: {
+      secure_url: { type: String },
+      public_id: { type: String },
+    },
+    default: null,
   },
   status: { type: String },
   createdAt: { type: Date, default: Date.now },

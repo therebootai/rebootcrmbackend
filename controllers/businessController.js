@@ -759,6 +759,11 @@ exports.updateBusiness = async (req, res) => {
       source,
       remarks,
       visit_result,
+      telecallerId,
+      digitalMarketerId,
+      bdeId,
+      tagAppointment,
+      appointmentDate,
     } = req.body;
 
     // Find the business to update by businessId
@@ -781,6 +786,14 @@ exports.updateBusiness = async (req, res) => {
     businessUpdate.remarks = remarks || businessUpdate.remarks;
     businessUpdate.followUpDate = followUpDate || businessUpdate.followUpDate;
     businessUpdate.visit_result = visit_result || businessUpdate.visit_result;
+    businessUpdate.telecallerId = telecallerId || businessUpdate.telecallerId;
+    businessUpdate.digitalMarketerId =
+      digitalMarketerId || businessUpdate.digitalMarketerId;
+    businessUpdate.bdeId = bdeId || businessUpdate.bdeId;
+    businessUpdate.tagAppointment =
+      tagAppointment || businessUpdate.tagAppointment;
+    businessUpdate.appointmentDate =
+      appointmentDate || businessUpdate.appointmentDate;
 
     // Save the updated business
     await businessUpdate.save();
