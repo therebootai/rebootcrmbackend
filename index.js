@@ -133,7 +133,6 @@ const sendFCMNotification = async (
 
     // Always use admin.messaging().send()
     const response = await admin.messaging().send(message);
-    console.log("Successfully sent message:", response);
 
     // Save notification record to database
     await notificationModel.create({
@@ -251,7 +250,6 @@ app.post("/api/send-notification", async (req, res) => {
           ],
         }));
 
-      console.log(user);
 
       if (!user || !user.apptoken) {
         return res.status(400).json({
