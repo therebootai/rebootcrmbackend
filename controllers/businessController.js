@@ -377,6 +377,21 @@ exports.getBusiness = async (req, res) => {
       if (assignedCities.length > 0)
         telecallerOrConditions.push({ city: { $in: assignedCities } });
 
+      // Add created_business to filter here as well
+      if (
+        telecaller.created_business &&
+        Array.isArray(telecaller.created_business) &&
+        telecaller.created_business.length > 0
+      ) {
+        createdBusinessIdsToCount = telecaller.created_business;
+        telecallerOrConditions.push({
+          _id: { $in: createdBusinessIdsToCount },
+        }); // ADDED THIS LINE
+      } else {
+        // If no created businesses, ensure filter doesn't return anything for this condition
+        telecallerOrConditions.push({ _id: { $in: [] } }); // Consider if this is the desired behavior or if you just want to skip the condition
+      }
+
       if (telecallerOrConditions.length > 0) {
         if (!filter.$and) filter.$and = [];
         filter.$and.push({ $or: telecallerOrConditions });
@@ -419,6 +434,18 @@ exports.getBusiness = async (req, res) => {
         if (bdeAssignedCities.length > 0)
           bdeOrConditions.push({ city: { $in: bdeAssignedCities } });
       }
+
+      if (
+        bde.created_business &&
+        Array.isArray(bde.created_business) &&
+        bde.created_business.length > 0
+      ) {
+        createdBusinessIdsToCount = bde.created_business;
+        bdeOrConditions.push({ _id: { $in: createdBusinessIdsToCount } }); // ADDED THIS LINE
+      } else {
+        bdeOrConditions.push({ _id: { $in: [] } }); // Consider if this is the desired behavior or if you just want to skip the condition
+      }
+
       if (bdeOrConditions.length > 0) {
         if (!filter.$and) filter.$and = [];
         filter.$and.push({ $or: bdeOrConditions });

@@ -452,10 +452,29 @@ exports.checkInUser = async (req, res) => {
     }
 
     // Check for an existing open attendance record for today
+    const existingLeaveAttendance = user.attendence_list.find(
+      (att) =>
+        att.date &&
+        att.date.toISOString().split("T")[0] === today &&
+        att.status === "leave" &&
+        att.leave_approval === "approved" // Check if exit_time is not set (implies open record)
+    );
+
+    if (existingLeaveAttendance) {
+      return res.status(409).json({
+        // 409 Conflict indicates resource already exists/is in a state that conflicts
+        message: "You are already on leave for today.",
+        success: false,
+        attendanceRecord: existingLeaveAttendance,
+      });
+    }
+
+    // Check for an existing open attendance record for today
     const existingOpenAttendance = user.attendence_list.find(
       (att) =>
         att.date &&
         att.date.toISOString().split("T")[0] === today &&
+        att.status === "present" &&
         !att.exit_time // Check if exit_time is not set (implies open record)
     );
 
