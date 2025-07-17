@@ -14,7 +14,7 @@ exports.login = async (req, res) => {
   }
 
   try {
-    let user = await BDE.findOne({ mobileNumber });
+    let user = await BDE.findOne({ mobileNumber }).populate("employee_ref");
     if (user) {
       if (user.status === "inactive") {
         return res.status(400).json({ message: "User is deactivated" });
@@ -45,7 +45,7 @@ exports.login = async (req, res) => {
       });
     }
 
-    user = await Telecaller.findOne({ mobileNumber });
+    user = await Telecaller.findOne({ mobileNumber }).populate("employee_ref");
     if (user) {
       if (user.status === "inactive") {
         return res.status(400).json({ message: "User is deactivated" });
@@ -75,7 +75,9 @@ exports.login = async (req, res) => {
       });
     }
 
-    user = await DigitalMarketer.findOne({ mobileNumber });
+    user = await DigitalMarketer.findOne({ mobileNumber }).populate(
+      "employee_ref"
+    );
     if (user) {
       if (user.status === "inactive") {
         return res.status(400).json({ message: "User is deactivated" });
@@ -244,32 +246,71 @@ exports.verifyWithOtp = async (req, res) => {
       otpStorage[formattedPhone].otp === otp &&
       otpStorage[formattedPhone].expiresAt > Date.now()
     ) {
-      let user =
-        (await BDE.findOne({ mobileNumber: phone })) ||
-        (await Telecaller.findOne({ mobileNumber: phone })) ||
-        (await DigitalMarketer.findOne({ mobileNumber: phone }));
+      let user = null;
+      let role = null;
+      let nameField = null;
+      let idField = null;
 
+      // Find user and determine their role in a single, clean block
+      user = await BDE.findOne({ mobileNumber: phone }).populate(
+        "employee_ref"
+      );
+      if (user) {
+        role = "bde";
+        nameField = "bdename";
+        idField = "bdeId";
+      }
+
+      if (!user) {
+        user = await Telecaller.findOne({ mobileNumber: phone }).populate(
+          "employee_ref"
+        );
+        if (user) {
+          role = "telecaller";
+          nameField = "telecallername";
+          idField = "telecallerId";
+        }
+      }
+
+      if (!user) {
+        user = await DigitalMarketer.findOne({ mobileNumber: phone }).populate(
+          "employee_ref"
+        );
+        if (user) {
+          role = "digitalMarketer";
+          nameField = "digitalMarketername";
+          idField = "digitalMarketerId";
+        }
+      }
+
+      // Check if user was found and is not deactivated
       if (!user) {
         return res.status(404).json({ message: "User not found" });
       }
+      if (user.status === "inactive") {
+        return res.status(400).json({ message: "User is deactivated" });
+      }
 
-      const role = user.bdename
-        ? "bde"
-        : user.telecallername
-        ? "telecaller"
-        : "digitalMarketer";
-      const name =
-        user.bdename || user.telecallername || user.digitalMarketername;
-      const id = user.bdeId || user.telecallerId || user.digitalMarketerId;
+      // Extract details for JWT payload and response
+      const name = user[nameField];
+      const id = user[idField];
 
+      // Sign the JWT token with a consistent payload
       const token = jwt.sign(
-        { id: user._id.toString(), phone: user.mobileNumber, name },
+        {
+          id: user._id,
+          mobileNumber: user.mobileNumber,
+          name: name,
+          userType: role, // Using a consistent key with your login controller
+        },
         process.env.SECRET_KEY,
         { expiresIn: "30d" }
       );
 
+      // Clean up the used OTP
       delete otpStorage[formattedPhone];
 
+      // Send a consistent and complete response
       return res.json({
         success: true,
         message: "OTP verified successfully, user logged in",
@@ -277,6 +318,7 @@ exports.verifyWithOtp = async (req, res) => {
         name,
         role,
         id,
+        user, // Returning the full user object for consistency with BDE login
       });
     } else {
       return res
@@ -363,9 +405,17 @@ exports.logout = async (req, res) => {
 
 exports.checkInUser = async (req, res) => {
   try {
+    const { entry_time_location } = req.body;
     if (!req.user || !req.userType) {
       return res.status(401).json({
         message: "Authentication required. User not identified.",
+        success: false,
+      });
+    }
+
+    if (!entry_time_location) {
+      return res.status(400).json({
+        message: "Entry time locations are required.",
         success: false,
       });
     }
@@ -402,10 +452,29 @@ exports.checkInUser = async (req, res) => {
     }
 
     // Check for an existing open attendance record for today
+    const existingLeaveAttendance = user.attendence_list.find(
+      (att) =>
+        att.date &&
+        att.date.toISOString().split("T")[0] === today &&
+        att.status === "leave" &&
+        att.leave_approval === "approved" // Check if exit_time is not set (implies open record)
+    );
+
+    if (existingLeaveAttendance) {
+      return res.status(409).json({
+        // 409 Conflict indicates resource already exists/is in a state that conflicts
+        message: "You are already on leave for today.",
+        success: false,
+        attendanceRecord: existingLeaveAttendance,
+      });
+    }
+
+    // Check for an existing open attendance record for today
     const existingOpenAttendance = user.attendence_list.find(
       (att) =>
         att.date &&
         att.date.toISOString().split("T")[0] === today &&
+        att.status === "present" &&
         !att.exit_time // Check if exit_time is not set (implies open record)
     );
 
@@ -443,6 +512,7 @@ exports.checkInUser = async (req, res) => {
       entry_time: now, // Store the full Date object including time
       exit_time: null, // Initialize as null or undefined, to be filled on checkout
       day_count: "0", // Default to "0", will be calculated on checkout
+      entry_time_location,
       status: "present", // User is now present
     };
 
@@ -465,9 +535,18 @@ exports.checkInUser = async (req, res) => {
 
 exports.checkOutUser = async (req, res) => {
   try {
+    const { exit_time_location } = req.body;
+
     if (!req.user || !req.userType) {
       return res.status(401).json({
         message: "Authentication required. User not identified.",
+        success: false, // Added for consistency
+      });
+    }
+
+    if (!exit_time_location) {
+      return res.status(400).json({
+        message: "Exit time locations are required.",
         success: false, // Added for consistency
       });
     }
@@ -512,7 +591,8 @@ exports.checkOutUser = async (req, res) => {
       if (
         att.date &&
         att.date.toISOString().split("T")[0] === today &&
-        !att.exit_time
+        !att.exit_time &&
+        att.status === "present"
       ) {
         targetAttendanceIndex = i;
         break; // Found the most recent open record for today
@@ -820,19 +900,6 @@ exports.getLeaveRequests = async (req, res) => {
 // --- NEW: updateLeaveRequest Controller Function ---
 exports.updateLeaveRequest = async (req, res) => {
   try {
-    // if (!req.user || !req.userType) {
-    //   return res.status(401).json({
-    //     message: "Authentication required. User not identified.",
-    //     success: false,
-    //   });
-    // }
-
-    // Assuming an admin or a manager role can update leave requests
-    // You might want to add a more specific role check here:
-    // if (req.userType !== 'admin' && req.userType !== 'manager') {
-    //   return res.status(403).json({ message: "Forbidden: Only authorized roles can update leave requests.", success: false });
-    // }
-
     const { userId, recordId } = req.params; // Get userId and recordId from URL parameters
     const { leave_approval } = req.body; // Get new approval status from body
 
