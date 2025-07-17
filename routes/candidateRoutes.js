@@ -4,6 +4,7 @@ const candidateController = require("../controllers/candidateController");
 
 router.post("/create", candidateController.createCandidate);
 router.get("/get", candidateController.getCandidate);
+router.get("/filters", candidateController.getCandidateFilters);
 router.get("/get/:candidateId", candidateController.getCandidateById);
 router.put("/update/:candidateId", candidateController.updateCandidate);
 router.delete("/delete/:candidateId", candidateController.deleteCandidate);
