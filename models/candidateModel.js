@@ -1,23 +1,48 @@
 const mongoose = require("mongoose");
 const Schema = mongoose.Schema;
 
-const candidateSchema = new Schema({
-  candidateId: {
-    type: String,
-    unique: true,
-    required: true,
+const candidateSchema = new Schema(
+  {
+    candidateId: {
+      type: String,
+      unique: true,
+      required: true,
+    },
+    candidatename: { type: String, required: true },
+    mobileNumber: { type: String, required: true, unique: true },
+    altMobileNumber: { type: String, sparse: true },
+    city: { type: String, required: true },
+    interestPost: {
+      type: String,
+      required: true,
+      enum: [
+        "Business Development Executive",
+        "Team Leader Sales",
+        "Digital Marketing Executive",
+        "Telecaller",
+        "HR",
+        "Content Writer",
+        "UI / UX Developer",
+        "Creative Graphics Designer",
+        "Full Stack Developer",
+        "App Developer",
+      ],
+    },
+    lastQualification: { type: String, required: true },
+    experience: { type: String },
+    remarks: { type: String },
+    cv: {
+      type: {
+        secure_url: { type: String },
+        public_id: { type: String },
+      },
+      default: null,
+    },
   },
-  candidatename: { type: String, required: true },
-  mobileNumber: { type: String, required: true, unique: true },
-  altMobileNumber: { type: String, unique: true, sparse: true },
-  city: { type: String, required: true },
-  interestPost: { type: String, required: true },
-  lastQualification: { type: String, required: true },
-  experience: { type: String },
-  rating: { type: String },
-  status: { type: String },
-  createdAt: { type: Date, default: Date.now },
-});
+  {
+    timestamps: true,
+  }
+);
 
 // Middleware to set altMobileNumber to null if it is an empty string
 candidateSchema.pre("save", function (next) {
