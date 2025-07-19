@@ -12,7 +12,6 @@ exports.checkAuth = async (req, res, next) => {
     const decoded = jwt.verify(token, process.env.SECRET_KEY);
     let user;
 
-
     const userId = decoded.id;
     const userType = decoded.userType;
 
@@ -56,5 +55,18 @@ exports.checkAuth = async (req, res, next) => {
     }
     console.error("Error checking authentication:", error);
     res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+exports.createToken = (payload) => {
+  try {
+    if (!payload) throw Error("Invalid payload");
+    const token = jwt.sign(payload, process.env.SECRET_KEY, {
+      expiresIn: "30d",
+    });
+    return token;
+  } catch (error) {
+    console.log(error);
+    throw Error(error.message);
   }
 };
