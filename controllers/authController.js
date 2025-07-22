@@ -1,10 +1,10 @@
 const BDE = require("../models/bdeModel");
 const Telecaller = require("../models/telecallerModel");
 const DigitalMarketer = require("../models/digitalMarketerModel");
-const bcrypt = require("bcryptjs");
-const jwt = require("jsonwebtoken");
 const axios = require("axios");
 const mongoose = require("mongoose");
+const User = require("../models/user");
+const { createToken } = require("../middleware/checkAuth");
 
 exports.login = async (req, res) => {
   const { mobileNumber, password } = req.body;
@@ -14,96 +14,29 @@ exports.login = async (req, res) => {
   }
 
   try {
-    let user = await BDE.findOne({ mobileNumber }).populate("employee_ref");
+    const user = await User.findOne({
+      $or: [{ phone: mobileNumber }, { email: mobileNumber }],
+    });
+
+    if (!user) {
+      return res.status(400).json({ message: "User not found" });
+    }
+
     if (user) {
-      if (user.status === "inactive") {
+      if (!user.status) {
         return res.status(400).json({ message: "User is deactivated" });
       }
 
-      const isMatch = await bcrypt.compare(password, user.password);
+      const isMatch = await user.comparePassword(password);
       if (!isMatch) {
         return res.status(400).json({ message: "Invalid credentials" });
       }
 
-      const token = jwt.sign(
-        {
-          id: user._id,
-          mobileNumber: user.mobileNumber,
-          name: user.bdename,
-          userType: "bde",
-        },
-        process.env.SECRET_KEY,
-        { expiresIn: "30d" }
-      );
+      const token = createToken(user.toObject());
 
       return res.status(200).json({
         token,
-        name: user.bdename,
-        role: "bde",
-        id: user.bdeId,
         user,
-      });
-    }
-
-    user = await Telecaller.findOne({ mobileNumber }).populate("employee_ref");
-    if (user) {
-      if (user.status === "inactive") {
-        return res.status(400).json({ message: "User is deactivated" });
-      }
-
-      const isMatch = await bcrypt.compare(password, user.password);
-      if (!isMatch) {
-        return res.status(400).json({ message: "Invalid credentials" });
-      }
-
-      const token = jwt.sign(
-        {
-          id: user._id,
-          mobileNumber: user.mobileNumber,
-          name: user.telecallername,
-          userType: "telecaller",
-        },
-        process.env.SECRET_KEY,
-        { expiresIn: "30d" }
-      );
-
-      return res.status(200).json({
-        token,
-        name: user.telecallername,
-        role: "telecaller",
-        id: user.telecallerId,
-      });
-    }
-
-    user = await DigitalMarketer.findOne({ mobileNumber }).populate(
-      "employee_ref"
-    );
-    if (user) {
-      if (user.status === "inactive") {
-        return res.status(400).json({ message: "User is deactivated" });
-      }
-
-      const isMatch = await bcrypt.compare(password, user.password);
-      if (!isMatch) {
-        return res.status(400).json({ message: "Invalid credentials" });
-      }
-
-      const token = jwt.sign(
-        {
-          id: user._id,
-          mobileNumber: user.mobileNumber,
-          name: user.digitalMarketername,
-          userType: "digitalMarketer",
-        },
-        process.env.SECRET_KEY,
-        { expiresIn: "1h" }
-      );
-
-      return res.status(200).json({
-        token,
-        name: user.digitalMarketername,
-        role: "digitalMarketer",
-        id: user.digitalMarketerId,
       });
     }
 
@@ -159,14 +92,12 @@ exports.sendOtp = async (req, res) => {
 
     const formattedPhone = phone.startsWith("91") ? phone : "91" + phone;
 
-    let user =
-      (await BDE.findOne({ mobileNumber: phone })) ||
-      (await Telecaller.findOne({ mobileNumber: phone })) ||
-      (await DigitalMarketer.findOne({ mobileNumber: phone }));
+    let user = User.findOne({ phone: phone });
 
-    let name = "User"; // Default name
+    let name = "User";
+
     if (user) {
-      name = user.bdename || user.telecallername || user.digitalMarketername;
+      name = user.name;
     }
     const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
 
@@ -246,66 +177,27 @@ exports.verifyWithOtp = async (req, res) => {
       otpStorage[formattedPhone].otp === otp &&
       otpStorage[formattedPhone].expiresAt > Date.now()
     ) {
-      let user = null;
-      let role = null;
-      let nameField = null;
-      let idField = null;
+      const user = await User.findOne({ mobileNumber: formattedPhone });
 
-      // Find user and determine their role in a single, clean block
-      user = await BDE.findOne({ mobileNumber: phone }).populate(
-        "employee_ref"
-      );
-      if (user) {
-        role = "bde";
-        nameField = "bdename";
-        idField = "bdeId";
-      }
-
+      // 5. User Existence and Status Checks
       if (!user) {
-        user = await Telecaller.findOne({ mobileNumber: phone }).populate(
-          "employee_ref"
-        );
-        if (user) {
-          role = "telecaller";
-          nameField = "telecallername";
-          idField = "telecallerId";
-        }
+        return res.status(404).json({
+          success: false,
+          message: "User not found with this phone number.",
+        });
       }
 
-      if (!user) {
-        user = await DigitalMarketer.findOne({ mobileNumber: phone }).populate(
-          "employee_ref"
-        );
-        if (user) {
-          role = "digitalMarketer";
-          nameField = "digitalMarketername";
-          idField = "digitalMarketerId";
-        }
+      // --- CHANGE HERE: Check if user.status is boolean false ---
+      if (user.status === false) {
+        // If status is boolean false, user is inactive
+        return res.status(400).json({
+          success: false,
+          message: "Your account is deactivated. Please contact support.",
+        });
       }
 
-      // Check if user was found and is not deactivated
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
-      }
-      if (user.status === "inactive") {
-        return res.status(400).json({ message: "User is deactivated" });
-      }
-
-      // Extract details for JWT payload and response
-      const name = user[nameField];
-      const id = user[idField];
-
-      // Sign the JWT token with a consistent payload
-      const token = jwt.sign(
-        {
-          id: user._id,
-          mobileNumber: user.mobileNumber,
-          name: name,
-          userType: role, // Using a consistent key with your login controller
-        },
-        process.env.SECRET_KEY,
-        { expiresIn: "30d" }
-      );
+      // Generate JWT token
+      const token = createToken(user.toObject());
 
       // Clean up the used OTP
       delete otpStorage[formattedPhone];
@@ -315,9 +207,6 @@ exports.verifyWithOtp = async (req, res) => {
         success: true,
         message: "OTP verified successfully, user logged in",
         token,
-        name,
-        role,
-        id,
         user, // Returning the full user object for consistency with BDE login
       });
     } else {
@@ -340,66 +229,19 @@ exports.resetPassword = async (req, res) => {
         .json({ message: "Mobile number and new password are required" });
     }
 
-    let user =
-      (await BDE.findOne({ mobileNumber })) ||
-      (await Telecaller.findOne({ mobileNumber })) ||
-      (await DigitalMarketer.findOne({ mobileNumber }));
+    let user = await User.findOne({ mobileNumber });
 
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
 
-    user.password = await bcrypt.hash(newPassword, 10);
+    user.password = newPassword;
     await user.save();
 
     return res.json({ message: "Password updated successfully" });
   } catch (error) {
     console.error("Error resetting password:", error);
     return res.status(500).json({ message: "Internal server error" });
-  }
-};
-
-exports.logout = async (req, res) => {
-  try {
-    // Ensure req.user and req.userType are set by your checkAuth middleware
-    if (!req.user || !req.userType) {
-      return res
-        .status(401)
-        .json({ message: "Authentication required. User not identified." });
-    }
-
-    const userId = req.user._id;
-    const userType = req.userType;
-
-    let user;
-    switch (userType) {
-      case "bde":
-        user = await BDE.findById(userId);
-        break;
-      case "telecaller":
-        user = await Telecaller.findById(userId);
-        break;
-      case "digitalMarketer":
-        user = await DigitalMarketer.findById(userId);
-        break;
-      default:
-        return res
-          .status(400)
-          .json({ message: "Invalid user type provided by token." });
-    }
-
-    if (!user) {
-      return res.status(404).json({ message: "User not found in database." });
-    }
-
-    res.status(200).json({
-      message: "Logged out successfully. Attendance updated.",
-    });
-  } catch (error) {
-    console.error("Logout error:", error);
-    res
-      .status(500)
-      .json({ message: "Internal server error. Please try again." });
   }
 };
 
@@ -422,27 +264,10 @@ exports.checkInUser = async (req, res) => {
 
     // Declare userId and userType at the beginning of the try block
     const userId = req.user._id;
-    const userType = req.userType;
     const now = new Date();
     const today = now.toISOString().split("T")[0]; // "YYYY-MM-DD" for comparison
 
-    let user;
-    switch (userType) {
-      case "bde":
-        user = await BDE.findById(userId);
-        break;
-      case "telecaller":
-        user = await Telecaller.findById(userId);
-        break;
-      case "digitalMarketer":
-        user = await DigitalMarketer.findById(userId);
-        break;
-      default:
-        return res.status(400).json({
-          message: "Invalid user type provided by token.",
-          success: false,
-        });
-    }
+    const user = await User.findById(userId);
 
     if (!user) {
       return res.status(404).json({
@@ -552,27 +377,10 @@ exports.checkOutUser = async (req, res) => {
     }
 
     const userId = req.user._id;
-    const userType = req.userType;
     const now = new Date();
     const today = now.toISOString().split("T")[0]; // "YYYY-MM-DD" for comparison
 
-    let user;
-    switch (userType) {
-      case "bde":
-        user = await BDE.findById(userId);
-        break;
-      case "telecaller":
-        user = await Telecaller.findById(userId);
-        break;
-      case "digitalMarketer":
-        user = await DigitalMarketer.findById(userId);
-        break;
-      default:
-        return res.status(400).json({
-          message: "Invalid user type provided by token.",
-          success: false, // Added for consistency
-        });
-    }
+    const user = await User.findById(userId);
 
     if (!user) {
       return res.status(404).json({
@@ -698,25 +506,8 @@ exports.applyLeave = async (req, res) => {
     }
 
     const userId = req.user._id;
-    const userType = req.userType;
 
-    let user;
-    switch (userType) {
-      case "bde":
-        user = await BDE.findById(userId);
-        break;
-      case "telecaller":
-        user = await Telecaller.findById(userId);
-        break;
-      case "digitalMarketer":
-        user = await DigitalMarketer.findById(userId);
-        break;
-      default:
-        return res.status(400).json({
-          message: "Invalid user type provided by token.",
-          success: false,
-        });
-    }
+    const user = await User.findById(userId);
 
     if (!user) {
       return res.status(404).json({
@@ -805,87 +596,169 @@ exports.applyLeave = async (req, res) => {
 
 exports.getLeaveRequests = async (req, res) => {
   try {
-    const { userId, userType, status, startDate, endDate } = req.query;
+    const {
+      userId,
+      userType,
+      status,
+      startDate,
+      endDate,
+      page = 1,
+      limit = 10,
+    } = req.query;
 
-    let queryFilter = {};
-    if (userId) {
-      queryFilter._id = userId;
+    const pageNumber = parseInt(page, 10);
+    const limitNumber = parseInt(limit, 10);
+    const skip = (pageNumber - 1) * limitNumber;
+
+    // Validate pagination parameters
+    if (isNaN(pageNumber) || pageNumber < 1) {
+      return res.status(400).json({
+        message: "Invalid page number. Must be a positive integer.",
+        success: false,
+      });
+    }
+    if (isNaN(limitNumber) || limitNumber < 1) {
+      return res.status(400).json({
+        message: "Invalid limit number. Must be a positive integer.",
+        success: false,
+      });
     }
 
+    let matchQuery = {
+      "attendence_list.status": "leave", // Always filter for leave records
+    };
+
+    // Filter by specific userId if provided
+    if (userId) {
+      if (!mongoose.Types.ObjectId.isValid(userId)) {
+        return res.status(400).json({
+          message: "Invalid userId format.",
+          success: false,
+        });
+      }
+      matchQuery._id = new mongoose.Types.ObjectId(userId); // Match user by ObjectId
+    }
+
+    // Filter by userType (designation) if provided
+    if (userType) {
+      const validDesignations = [
+        "BDE",
+        "Telecaller",
+        "DigitalMarketer",
+        "Admin",
+        "HR",
+      ];
+      const normalizedUserType =
+        userType.charAt(0).toUpperCase() + userType.slice(1).toLowerCase();
+
+      if (!validDesignations.includes(normalizedUserType)) {
+        return res.status(400).json({
+          message: `Invalid userType: '${userType}'. Must be one of ${validDesignations.join(
+            ", "
+          )}.`,
+          success: false,
+        });
+      }
+      matchQuery.designation = normalizedUserType;
+    }
+
+    // Filter by leave_approval status if provided
+    if (status) {
+      const validApprovalStatuses = ["approved", "rejected", "pending"];
+      if (!validApprovalStatuses.includes(status.toLowerCase())) {
+        return res.status(400).json({
+          message: `Invalid leave approval status: '${status}'. Must be 'approved', 'rejected', or 'pending'.`,
+          success: false,
+        });
+      }
+      matchQuery["attendence_list.leave_approval"] = status.toLowerCase();
+    }
+
+    // Filter by date range for the attendance record
     if (startDate || endDate) {
       const dateConditions = {};
       if (startDate) {
         const startOfDay = new Date(startDate);
-        startOfDay.setUTCHours(0, 0, 0, 0);
+        startOfDay.setUTCHours(0, 0, 0, 0); // Start of day in UTC
         dateConditions.$gte = startOfDay;
       }
       if (endDate) {
         const endOfDay = new Date(endDate);
-        endOfDay.setUTCHours(23, 59, 59, 999);
+        endOfDay.setUTCHours(23, 59, 59, 999); // End of day in UTC
         dateConditions.$lte = endOfDay;
       }
-
-      queryFilter["attendence_list.date"] = dateConditions;
+      matchQuery["attendence_list.date"] = dateConditions;
     }
 
-    const userModels = [BDE, Telecaller, DigitalMarketer];
-    let allLeaveRequests = [];
+    // Aggregation pipeline for efficient querying
+    const pipeline = [
+      { $match: matchQuery }, // Initial match on the User document and specific attendance fields if possible
+      { $unwind: "$attendence_list" }, // Deconstruct the attendence_list array
 
-    for (const Model of userModels) {
-      if (
-        userType &&
-        Model.modelName.toLowerCase() !== userType.toLowerCase()
-      ) {
-        continue;
-      }
+      // Add a second $match stage specific to unwound attendance list items
+      // This is crucial because some matchQuery fields (like 'attendence_list.status')
+      // only work correctly *after* $unwind.
+      {
+        $match: {
+          "attendence_list.status": "leave", // Re-match for leave status after unwind
+        },
+      },
+      // Important: Add any specific leave_approval and date filters here if they were not applied in the initial matchQuery,
+      // or if you want to ensure they apply *after* unwind. For simple string/date range matches,
+      // they should work fine in the first match stage on the parent array.
 
-      const users = await Model.find(queryFilter);
+      {
+        $project: {
+          _id: 0,
+          userId: "$_id",
+          userType: "$designation",
+          userCId: "$userId", // This is the string userId, like "EMP-001"
+          userName: "$name",
+          userNumber: "$phone",
 
-      users.forEach((user) => {
-        user.attendence_list.forEach((att) => {
-          if (att.status === "leave") {
-            if (status && att.leave_approval !== status) {
-              return;
-            }
+          attendanceRecordId: "$attendence_list._id",
+          date: "$attendence_list.date",
+          leave_reason: "$attendence_list.leave_reason",
+          leave_approval: "$attendence_list.leave_approval",
+          status: "$attendence_list.status",
+        },
+      },
+      {
+        $sort: { date: -1 }, // Sort by date descending (most recent first)
+      },
+      // Pagination stages
+      { $skip: skip },
+      { $limit: limitNumber },
+    ];
 
-            if (startDate || endDate) {
-              const attDate = new Date(att.date);
-              if (isNaN(attDate.getTime())) return;
+    // Pipeline for counting total matching documents (for pagination metadata)
+    const countPipeline = [
+      { $match: matchQuery },
+      { $unwind: "$attendence_list" },
+      {
+        $match: {
+          "attendence_list.status": "leave",
+        },
+      },
+      { $count: "totalCount" },
+    ];
 
-              const startOfDay = startDate ? new Date(startDate) : null;
-              if (startOfDay) startOfDay.setUTCHours(0, 0, 0, 0);
+    const [leaveRequests, totalCountResult] = await Promise.all([
+      User.aggregate(pipeline),
+      User.aggregate(countPipeline),
+    ]);
 
-              const endOfDay = endDate ? new Date(endDate) : null;
-              if (endOfDay) endOfDay.setUTCHours(23, 59, 59, 999);
-
-              if (startOfDay && attDate < startOfDay) return;
-              if (endOfDay && attDate > endOfDay) return;
-            }
-
-            allLeaveRequests.push({
-              userId: user._id,
-              userType: Model.modelName.toLowerCase(),
-
-              userCId:
-                user.telecallerId || user.bdeId || user.digitalMarketerId,
-
-              userName: user.bdename,
-              userNumber: user.mobileNumber,
-              attendanceRecordId: att._id,
-              date: att.date,
-              leave_reason: att.leave_reason,
-              leave_approval: att.leave_approval,
-              status: att.status,
-            });
-          }
-        });
-      });
-    }
+    const totalCount =
+      totalCountResult.length > 0 ? totalCountResult[0].totalCount : 0;
+    const totalPages = Math.ceil(totalCount / limitNumber);
 
     res.status(200).json({
       message: "Leave requests fetched successfully.",
-      leaveRequests: allLeaveRequests,
-      totalCount: allLeaveRequests.length,
+      leaveRequests: leaveRequests,
+      totalCount: totalCount,
+      totalPages: totalPages,
+      currentPage: pageNumber,
+      pageSize: limitNumber,
       success: true,
     });
   } catch (error) {
@@ -914,14 +787,12 @@ exports.updateLeaveRequest = async (req, res) => {
     }
 
     // Find the user by userId
-    let user;
-    if (mongoose.Types.ObjectId.isValid(userId)) {
-      user =
-        (await BDE.findById(userId)) ||
-        (await Telecaller.findById(userId)) ||
-        (await DigitalMarketer.findById(userId)) ||
-        (await User.findById(userId)); // Fallback generic user
-    }
+    const user = await User.findOne({
+      $or: [
+        { _id: mongoose.Types.ObjectId.isValid(userId) ? userId : null },
+        { userId },
+      ],
+    });
 
     if (!user) {
       return res.status(404).json({
@@ -951,15 +822,6 @@ exports.updateLeaveRequest = async (req, res) => {
 
     // Update the leave_approval status
     attendanceRecord.leave_approval = leave_approval;
-
-    // Optional: You might want to update the main 'status' field based on approval
-    // For example, if approved, maybe change status to 'approved_leave' if your enum supports it.
-    // For now, we'll keep it as 'leave' as per schema.
-    // if (leave_approval === "approved") {
-    //   attendanceRecord.status = "approved_leave"; // Requires 'approved_leave' in your enum
-    // } else if (leave_approval === "rejected") {
-    //   attendanceRecord.status = "rejected_leave"; // Requires 'rejected_leave' in your enum
-    // }
 
     await user.save(); // Save the updated user document
 
