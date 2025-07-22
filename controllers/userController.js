@@ -4,14 +4,81 @@ const jwt = require("jsonwebtoken");
 const dotenv = require("dotenv");
 const bcrypt = require("bcryptjs");
 const axios = require("axios");
-const { default: mongoose } = require("mongoose");
+const mongoose = require("mongoose");
+const generateCustomId = require("../middleware/generateCustomId");
 
 dotenv.config();
 // Get all users
 exports.getAllUsers = async (req, res) => {
   try {
-    const users = await User.find();
-    res.json(users);
+    const {
+      designation,
+      assignCategories,
+      assignCities,
+      status,
+      search,
+      page = 1,
+      limit = 10,
+    } = req.query;
+
+    const query = {};
+
+    const pageNumber = parseInt(page, 10);
+    const limitNumber = parseInt(limit, 10);
+    const skip = (pageNumber - 1) * limitNumber;
+
+    if (designation) {
+      query.designation = designation;
+    }
+
+    if (assignCategories && Array.isArray(assignCategories)) {
+      const categoriesArray = assignCategories.split(",").map((c) => c.trim());
+      query.assignCategories = { $in: categoriesArray };
+    }
+
+    if (assignCities) {
+      const citiesArray = assignCities.split(",").map((c) => c.trim());
+      query.assignCities = { $in: citiesArray };
+    }
+
+    if (status) {
+      query.status = status;
+    }
+
+    if (search) {
+      query.$or = [
+        { name: { $regex: search, $options: "i" } },
+        { email: { $regex: search, $options: "i" } },
+        { phone: { $regex: search, $options: "i" } },
+        { designation: { $regex: search, $options: "i" } },
+      ];
+    }
+
+    const usersPromise = User.find(query)
+      .skip(skip)
+      .limit(limitNumber)
+      .populate("assignCategories")
+      .populate("assignCities")
+      .populate("employee_ref")
+      // Optional: Add sorting here, e.g., .sort({ name: 1 })
+      .lean(); // .lean() makes query faster by returning plain JS objects
+
+    // Create a promise for getting the total count of matching users
+    const countPromise = User.countDocuments(query);
+
+    // Run both promises concurrently
+    const [users, totalCount] = await Promise.all([usersPromise, countPromise]);
+
+    // 4. Calculate Pagination Metadata
+    const totalPages = Math.ceil(totalCount / limitNumber);
+
+    res.json({
+      users: users,
+      totalCount: totalCount,
+      totalPages: totalPages,
+      currentPage: pageNumber,
+      pageSize: limitNumber,
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -37,35 +104,76 @@ exports.getUserByPhone = async (req, res) => {
   }
 };
 
+exports.getUserById = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const user = await User.findOne({
+      $or: [
+        { _id: mongoose.Types.ObjectId.isValid(userId) ? userId : null },
+        { userId: userId },
+      ],
+    })
+      .populate("assignCategories")
+      .populate("assignCities")
+      .populate("employee_ref");
+    if (user) {
+      return res.json(user);
+    } else {
+      return res.status(404).json({ message: "User not found" });
+    }
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 // Create a new user
 exports.createUser = async (req, res) => {
-  const { name, email, phone, password, designation } = req.body;
+  const { name, email, phone, password, designation, employee_ref } = req.body;
 
   // Validate required fields
-  if (!name || !email || !phone || !password || !designation) {
+  if (!name || !phone || !password || !designation) {
     return res.status(400).json({ message: "All fields are required" });
+  }
+
+  if (designation !== "Admin" && !employee_ref) {
+    return res.status(400).json({ message: "Employee reference is required" });
   }
 
   try {
     // Check if the user already exists
-    const existingUser = await User.findOne({ email });
+    const existingUser = await User.findOne({ $or: [{ email }, { phone }] });
     if (existingUser) {
-      return res.status(400).json({ message: "Email already in use" });
+      return res.status(400).json({ message: "Email or Phone already in use" });
+    }
+
+    let userId;
+    if (designation === "Admin") {
+      userId = await generateCustomId(User, "userId", "Admin-");
+    } else if (designation === "BDE") {
+      userId = await generateCustomId(User, "userId", "BDE-");
+    } else if (designation === "Telecaller") {
+      userId = await generateCustomId(User, "userId", "Telecaller-");
+    } else if (designation === "DigitalMarketer") {
+      userId = await generateCustomId(User, "userId", "DigitalMarketer-");
+    } else {
+      userId = await generateCustomId(User, "userId", "HR-");
     }
 
     // Create new user
-    const newUser = new User({ name, email, phone, password, designation });
+    const newUser = new User({
+      userId,
+      name,
+      email,
+      phone,
+      password,
+      designation,
+      employee_ref,
+    });
+
     const savedUser = await newUser.save();
 
-    // Generate JWT token
-    const token = jwt.sign(
-      { id: savedUser._id, email: savedUser.email },
-      process.env.SECRET_KEY,
-      { expiresIn: "1h" }
-    );
-
     // Respond with the created user and token
-    res.status(201).json({ user: savedUser, token });
+    res.status(201).json({ user: savedUser });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -81,7 +189,11 @@ exports.loginUser = async (req, res) => {
   try {
     const user = await User.findOne({
       $or: [{ email: emailOrPhone }, { phone: emailOrPhone }],
-    });
+    })
+      .populate("assignCategories")
+      .populate("assignCities")
+
+      .populate("employee_ref");
 
     if (!user) {
       return res.status(400).json({ message: "Invalid credentials" });
@@ -214,7 +326,11 @@ exports.verifyWithOtp = async (req, res) => {
       otpStorage[formattedPhone].expiresAt > Date.now()
     ) {
       // Find user by phone number
-      const user = await User.findOne({ phone: phone });
+      const user = await User.findOne({ phone: phone })
+        .populate("assignCategories")
+        .populate("assignCities")
+
+        .populate("employee_ref");
       if (!user) {
         return res.status(404).json({ message: "User not found" });
       }
@@ -233,11 +349,7 @@ exports.verifyWithOtp = async (req, res) => {
         success: true,
         message: "OTP verified successfully, user logged in",
         token,
-        user: {
-          id: user._id,
-          name: user.name,
-          phone: user.phone,
-        },
+        user,
       });
     } else {
       return res
@@ -279,23 +391,61 @@ exports.updateUser = async (req, res) => {
   try {
     const { userId } = req.params;
 
-    const { password, created_business } = req.body;
+    const {
+      password,
+      assignCategories,
+      assignCities,
+      targets,
+      apptoken,
+      status,
+    } = req.body;
 
-    const user = await User.findById(userId);
+    const user = await User.findOne({
+      $or: [
+        { _id: mongoose.Types.ObjectId.isValid(userId) ? userId : null },
+        { userId },
+      ],
+    });
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
 
     user.password = password || user.password;
 
-    if (Array.isArray(created_business) && created_business.length > 0) {
-      created_business.forEach((id) => {
-        // Ensure it's a valid ObjectId and not already present to prevent duplicates
-        if (
-          mongoose.Types.ObjectId.isValid(id) &&
-          !user.created_business.includes(id)
-        ) {
-          user.created_business.push(id);
+    if (Array.isArray(assignCategories) && assignCategories.length > 0) {
+      user.assignCategories.addToSet(
+        ...assignCategories.filter((id) => mongoose.Types.ObjectId.isValid(id))
+      );
+    }
+
+    if (Array.isArray(assignCities) && assignCities.length > 0) {
+      user.assignCities.addToSet(
+        ...assignCities.filter((id) => mongoose.Types.ObjectId.isValid(id))
+      );
+    }
+
+    if (Array.isArray(targets) && targets.length > 0) {
+      targets.forEach((newTarget) => {
+        const existingTargetIndex = user.targets.findIndex(
+          (t) => t.month === newTarget.month && t.year === newTarget.year
+        );
+
+        if (existingTargetIndex !== -1) {
+          // Update existing target properties
+          Object.assign(user.targets[existingTargetIndex], newTarget);
+        } else {
+          // Add new target
+          user.targets.push(newTarget);
         }
       });
+      // Mark targets array as modified if you directly manipulated subdocuments like this
+      user.markModified("targets");
     }
+
+    user.apptoken = apptoken || user.apptoken;
+
+    user.status = status !== undefined ? status : user.status;
 
     await user.save();
 

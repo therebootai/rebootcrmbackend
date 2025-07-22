@@ -78,8 +78,8 @@ app.use("/api/employee", employeeRoutes);
 app.use("/api/telecaller", telecallerRoutes);
 app.use("/api/digitalmarketer", digitalMarketerRoutes);
 app.use("/api/bde", bdeRoutes);
-app.use("/api", userRoutes);
-app.use("/api", authRoutes);
+app.use("/api/users", userRoutes);
+app.use("/api/auth", authRoutes);
 app.use("/api/waimage", waimageRoutes);
 app.use("/api/websiteleads", webSiteLeadsRoutes);
 app.use("/api/blogs", blogRoutes);
@@ -248,7 +248,6 @@ app.post("/api/send-notification", async (req, res) => {
             },
           ],
         }));
-
 
       if (!user || !user.apptoken) {
         return res.status(400).json({
