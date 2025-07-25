@@ -7,6 +7,8 @@ const userController = require("../controllers/userController");
 router.get("/get", userController.getAllUsers);
 router.get("/get/:userId", userController.getUserById);
 router.get("/users/checknumber", userController.getUserByPhone);
+router.get("/get-filters/:userId", userController.getUserFilters);
+
 router.post("/users/send-otp", userController.sendOtp);
 router.post("/users/verify-otp", userController.verifyOtp);
 router.post("/users/verify-with-otp", userController.verifyWithOtp);
