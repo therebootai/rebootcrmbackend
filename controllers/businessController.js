@@ -109,13 +109,13 @@ exports.getBusiness = async (req, res) => {
     const {
       search,
       mobileNumber,
-      city, // Explicit city filter (ObjectId or comma-separated ObjectIds)
-      category, // Explicit category filter (ObjectId or comma-separated ObjectIds)
+      city,
+      category,
       status,
-      source, // Explicit source filter (ObjectId or comma-separated ObjectIds)
-      assignedTo, // Corresponds to 'appoint_to' in the schema
-      leadBy, // Corresponds to 'lead_by' in the schema
-      createdBy, // Corresponds to 'created_by' in the schema
+      source,
+      assignedTo,
+      leadBy,
+      createdBy,
       followupstartdate,
       followupenddate,
       appointmentstartdate,
@@ -124,7 +124,7 @@ exports.getBusiness = async (req, res) => {
       createdenddate,
       businessname,
       sortBy,
-      sortOrder,
+      sortOrder = "desc",
     } = req.query;
 
     const limit =
@@ -132,38 +132,19 @@ exports.getBusiness = async (req, res) => {
     const page = parseInt(req.query.page) > 0 ? parseInt(req.query.page) : 1;
     const skip = (page - 1) * limit;
 
-    // This array will hold all top-level AND conditions
-    const finalAndConditions = [];
-
-    // --- Helper for Date Range Filters ---
-    const applyDateFilter = (field, startDate, endDate) => {
-      if (startDate || endDate) {
-        const dateRange = {};
-        if (startDate) dateRange.$gte = new Date(startDate);
-        if (endDate) {
-          const endOfDay = new Date(endDate);
-          endOfDay.setUTCHours(23, 59, 59, 999);
-          dateRange.$lte = endOfDay;
-        }
-        return { [field]: dateRange };
-      }
-      return null;
-    };
+    // The main filter object to be built
+    const findFilter = {};
 
     // --- Helper to Parse and Validate Multiple Object IDs ---
     const parseAndValidateObjectIds = (paramValue) => {
-      if (!paramValue) return [];
-      let ids = [];
-      if (Array.isArray(paramValue)) {
-        ids = paramValue;
-      } else if (typeof paramValue === "string") {
-        ids = paramValue.split(",").map((id) => id.trim());
-      } else {
-        return [];
-      }
-      return ids
+      if (!paramValue) return null;
+      const ids = (
+        Array.isArray(paramValue) ? paramValue : paramValue.split(",")
+      )
+        .map((id) => id.trim())
         .filter((id) => mongoose.Types.ObjectId.isValid(id))
         .map((id) => new mongoose.Types.ObjectId(id));
+      return ids.length > 0 ? { $in: ids } : null;
     };
 
     // --- User Resolution Helper (for assignedTo, leadBy, createdBy) ---
@@ -186,36 +167,48 @@ exports.getBusiness = async (req, res) => {
       return null;
     };
 
-    // --- Resolve assignedTo, leadBy, and createdBy users FIRST ---
+    // --- Resolve user IDs upfront to use them in the filter ---
     const [assignedToUser, leadByUser, createdByUser] = await Promise.all([
       assignedTo ? resolveUser(assignedTo) : Promise.resolve(null),
       leadBy ? resolveUser(leadBy) : Promise.resolve(null),
       createdBy ? resolveUser(createdBy) : Promise.resolve(null),
     ]);
 
-    // --- Populate General AND Conditions (Non-complex filters) ---
+    // --- Build the main filter object ---
 
     if (search) {
       const searchRegex = new RegExp(search, "i");
-      finalAndConditions.push({
-        $or: [
-          { buisnessname: searchRegex },
-          { contactpersonName: searchRegex },
-          { mobileNumber: searchRegex },
-          { remarks: searchRegex },
-        ],
-      });
+      findFilter.$or = [
+        { buisnessname: searchRegex },
+        { contactpersonName: searchRegex },
+        { mobileNumber: searchRegex },
+        { remarks: searchRegex },
+      ];
     }
 
-    if (mobileNumber)
-      finalAndConditions.push({
-        mobileNumber: { $regex: mobileNumber, $options: "i" },
-      });
-    if (businessname)
-      finalAndConditions.push({
-        buisnessname: { $regex: businessname, $options: "i" },
-      });
+    if (mobileNumber) {
+      findFilter.mobileNumber = { $regex: mobileNumber, $options: "i" };
+    }
+    if (businessname) {
+      findFilter.buisnessname = { $regex: businessname, $options: "i" };
+    }
 
+    // Explicit ID-based filters
+    const cityIds = parseAndValidateObjectIds(city);
+    if (cityIds) findFilter.city = cityIds;
+
+    const categoryIds = parseAndValidateObjectIds(category);
+    if (categoryIds) findFilter.category = categoryIds;
+
+    const sourceIds = parseAndValidateObjectIds(source);
+    if (sourceIds) findFilter.source = sourceIds;
+
+    // User-based filters
+    if (assignedToUser) findFilter.appoint_to = assignedToUser._id;
+    if (leadByUser) findFilter.lead_by = leadByUser._id;
+    if (createdByUser) findFilter.created_by = createdByUser._id;
+
+    // Status filter with special handling for 'visit_result.reason'
     if (status) {
       const statusesToIncludeReason = [
         "Followup",
@@ -224,124 +217,49 @@ exports.getBusiness = async (req, res) => {
         "Visited",
       ];
       if (statusesToIncludeReason.includes(status)) {
-        finalAndConditions.push({
-          $or: [{ status: status }, { "visit_result.reason": status }],
-        });
+        findFilter.$or = findFilter.$or || []; // Ensure $or array exists
+        findFilter.$or.push(
+          { status: status },
+          { "visit_result.reason": status }
+        );
       } else {
-        finalAndConditions.push({ status: status });
+        findFilter.status = status;
       }
     }
 
-    if (source) {
-      const sourceIds = parseAndValidateObjectIds(source);
-      if (sourceIds.length > 0) {
-        finalAndConditions.push({ source: { $in: sourceIds } });
-      } else {
-        finalAndConditions.push({
-          source: new mongoose.Types.ObjectId("000000000000000000000000"),
-        });
+    // Date Range filters
+    const applyDateRangeFilter = (field, startDate, endDate) => {
+      if (startDate || endDate) {
+        const dateRange = {};
+        if (startDate) dateRange.$gte = new Date(startDate);
+        if (endDate) {
+          const endOfDay = new Date(endDate);
+          endOfDay.setUTCHours(23, 59, 59, 999);
+          dateRange.$lte = endOfDay;
+        }
+        return { [field]: dateRange };
       }
+      return null;
+    };
+
+    const dateFilters = [
+      applyDateRangeFilter("followUpDate", followupstartdate, followupenddate),
+      applyDateRangeFilter(
+        "appointmentDate",
+        appointmentstartdate,
+        appointmentenddate
+      ),
+      applyDateRangeFilter("createdAt", createdstartdate, createdenddate),
+    ].filter(Boolean);
+
+    if (dateFilters.length > 0) {
+      findFilter.$and = dateFilters;
     }
-
-    // --- Construct the specific City/Category OR block ---
-    const cityCategoryAndConditions = [];
-    if (city) {
-      const cityIds = parseAndValidateObjectIds(city);
-      if (cityIds.length > 0) {
-        cityCategoryAndConditions.push({ city: { $in: cityIds } });
-      } else {
-        cityCategoryAndConditions.push({
-          city: new mongoose.Types.ObjectId("000000000000000000000000"),
-        });
-      }
-    }
-    if (category) {
-      const categoryIds = parseAndValidateObjectIds(category);
-      if (categoryIds.length > 0) {
-        cityCategoryAndConditions.push({ category: { $in: categoryIds } });
-      } else {
-        cityCategoryAndConditions.push({
-          category: new mongoose.Types.ObjectId("000000000000000000000000"),
-        });
-      }
-    }
-
-    // Only add this complex OR block if city OR category parameters were provided
-    if (cityCategoryAndConditions.length > 0) {
-      finalAndConditions.push({ $or: [{ $and: cityCategoryAndConditions }] });
-    }
-
-    // --- Construct the separate User OR block ---
-    const userOrConditions = [];
-    if (createdByUser) {
-      userOrConditions.push({ created_by: createdByUser._id });
-    } else if (createdBy) {
-      userOrConditions.push({
-        created_by: new mongoose.Types.ObjectId("000000000000000000000000"),
-      });
-    }
-
-    if (leadByUser) {
-      userOrConditions.push({ lead_by: leadByUser._id });
-    } else if (leadBy) {
-      userOrConditions.push({
-        lead_by: new mongoose.Types.ObjectId("000000000000000000000000"),
-      });
-    }
-
-    if (assignedToUser) {
-      userOrConditions.push({ appoint_to: assignedToUser._id });
-    } else if (assignedTo) {
-      userOrConditions.push({
-        appoint_to: new mongoose.Types.ObjectId("000000000000000000000000"),
-      });
-    }
-
-    // Only add this user OR block if any user parameters were provided
-    if (userOrConditions.length > 0) {
-      finalAndConditions.push({ $or: userOrConditions });
-    }
-
-    // --- Populate Date Range Filters (as independent AND conditions) ---
-    const dateAndConditions = [];
-    const followupDateCond = applyDateFilter(
-      "followUpDate",
-      followupstartdate,
-      followupenddate
-    );
-    const appointmentDateCond = applyDateFilter(
-      "appointmentDate",
-      appointmentstartdate,
-      appointmentenddate
-    );
-    const createdDateCond = applyDateFilter(
-      "createdAt",
-      createdstartdate,
-      createdenddate
-    );
-
-    if (followupDateCond) dateAndConditions.push(followupDateCond);
-    if (appointmentDateCond) dateAndConditions.push(appointmentDateCond);
-    if (createdDateCond) dateAndConditions.push(createdDateCond);
-
-    // Only add this date AND block if any date parameters were provided
-    if (dateAndConditions.length > 0) {
-      finalAndConditions.push({ $and: dateAndConditions });
-    }
-
-    // --- Finalize findFilter by combining all finalAndConditions with $and ---
-    let findFilter = {};
-    if (finalAndConditions.length > 0) {
-      findFilter.$and = finalAndConditions;
-    }
-
-    let countFilter = { ...findFilter };
 
     // --- Dynamic Sorting ---
-    let sort = { appointmentDate: -1 };
-
+    let sort = { createdAt: -1 };
     if (sortBy) {
-      const order = sortOrder && sortOrder.toLowerCase() === "asc" ? 1 : -1;
+      const order = sortOrder.toLowerCase() === "asc" ? 1 : -1;
       const allowedSortFields = [
         "buisnessname",
         "mobileNumber",
@@ -352,8 +270,6 @@ exports.getBusiness = async (req, res) => {
       ];
       if (allowedSortFields.includes(sortBy)) {
         sort = { [sortBy]: order };
-      } else {
-        console.warn(`Invalid sortBy field: ${sortBy}. Using default sort.`);
       }
     }
 
@@ -370,37 +286,35 @@ exports.getBusiness = async (req, res) => {
         .sort(sort)
         .skip(skip)
         .limit(limit),
-      business.countDocuments(countFilter),
+      business.countDocuments(findFilter), // Use the same filter for counting
     ]);
 
     const grandTotalBusinesses = await business.countDocuments({});
     const totalPages = Math.ceil(filteredBusinessesCount / limit);
 
-    // --- Status Counts (based on the common 'countFilter') ---
-    const [FollowupCount, appointmentCount, dealCloseCount] = await Promise.all(
-      [
+    // --- Status Counts (based on the common 'findFilter') ---
+    const [followupCount, appointmentCount, dealCloseCount, visitCount] =
+      await Promise.all([
         business.countDocuments({
-          ...countFilter,
+          ...findFilter,
           $or: [{ status: "Followup" }, { "visit_result.reason": "Followup" }],
         }),
         business.countDocuments({
-          ...countFilter,
+          ...findFilter,
           status: "Appointment Generated",
         }),
         business.countDocuments({
-          ...countFilter,
+          ...findFilter,
           $or: [
             { status: "Deal Closed" },
             { "visit_result.reason": "Deal Closed" },
           ],
         }),
-      ]
-    );
-
-    const visitCount = await business.countDocuments({
-      ...countFilter,
-      status: "Visited",
-    });
+        business.countDocuments({
+          ...findFilter,
+          status: "Visited",
+        }),
+      ]);
 
     res.status(200).json({
       success: true,
@@ -410,7 +324,7 @@ exports.getBusiness = async (req, res) => {
       totalCount: filteredBusinessesCount,
       statusCount: {
         grandTotalBusinesses,
-        FollowupCount,
+        FollowupCount: followupCount,
         appointmentCount,
         visitCount,
         dealCloseCount,
@@ -705,7 +619,7 @@ exports.updateBusiness = async (req, res) => {
       .status(200)
       .json({ message: "Business updated successfully", businessUpdate });
   } catch (error) {
-    console.error("Error updating Business:", error.message);
+    console.error("Error updating Business:", error);
     res.status(500).json({ message: "Error updating business", error });
   }
 };
@@ -728,7 +642,7 @@ exports.deleteBusiness = async (req, res) => {
       return res.status(404).json({ message: "Lead not found" });
     }
 
-    const deletedBusinessObjectId = businessDelete._id; // Get the MongoDB ObjectId
+    await business.findByIdAndDelete(businessDelete._id);
 
     res.status(200).json({ message: "Lead deleted successfully" });
   } catch (error) {

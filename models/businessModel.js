@@ -78,7 +78,7 @@ businessSchema.set("toObject", { virtuals: true });
 businessSchema.pre("save", function (next) {
   // Only generate a slug if it's not already set and if blogTitle is present
   if (!this.created_by) {
-    this.created_by = mongoose.Types.ObjectId("66ffbdc11c350a415864d493");
+    this.created_by = new mongoose.Types.ObjectId("66ffbdc11c350a415864d493");
   }
   next();
 });

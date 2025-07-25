@@ -16,7 +16,10 @@ exports.login = async (req, res) => {
   try {
     const user = await User.findOne({
       $or: [{ phone: mobileNumber }, { email: mobileNumber }],
-    });
+    })
+      .populate("assignCategories")
+      .populate("assignCities")
+      .populate("employee_ref");
 
     if (!user) {
       return res.status(400).json({ message: "User not found" });
@@ -248,7 +251,7 @@ exports.resetPassword = async (req, res) => {
 exports.checkInUser = async (req, res) => {
   try {
     const { entry_time_location } = req.body;
-    if (!req.user || !req.userType) {
+    if (!req.user || !req.user._id) {
       return res.status(401).json({
         message: "Authentication required. User not identified.",
         success: false,
@@ -262,10 +265,18 @@ exports.checkInUser = async (req, res) => {
       });
     }
 
-    // Declare userId and userType at the beginning of the try block
     const userId = req.user._id;
-    const now = new Date();
-    const today = now.toISOString().split("T")[0]; // "YYYY-MM-DD" for comparison
+    const now = new Date(); // This Date object is in the server's local timezone init
+    const options = {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      timeZone: "Asia/Kolkata", // Specify Indian Standard Time (IST)
+    };
+    const todayISTString = new Intl.DateTimeFormat("en-CA", options).format(
+      now
+    );
+    // Example: if now is 2025-07-25 01:00 AM IST, todayISTString will be "2025-07-25"
 
     const user = await User.findById(userId);
 
@@ -276,69 +287,90 @@ exports.checkInUser = async (req, res) => {
       });
     }
 
-    // Check for an existing open attendance record for today
-    const existingLeaveAttendance = user.attendence_list.find(
+    // Helper to get a record's date in IST YYYY-MM-DD format for accurate comparison
+    const getRecordDateISTString = (recordDate) => {
+      if (!recordDate) return null;
+      try {
+        const dateObj = new Date(recordDate); // Convert to Date object first if it's not already
+        return new Intl.DateTimeFormat("en-CA", options).format(dateObj);
+      } catch (e) {
+        console.error("Error formatting record date for IST comparison:", e);
+        return null;
+      }
+    };
+
+    // Check for an existing approved leave record for today (IST)
+    const existingApprovedLeave = user.attendence_list.find(
       (att) =>
         att.date &&
-        att.date.toISOString().split("T")[0] === today &&
+        getRecordDateISTString(att.date) === todayISTString && // Use IST comparison
         att.status === "leave" &&
-        att.leave_approval === "approved" // Check if exit_time is not set (implies open record)
+        att.leave_approval === "approved"
     );
 
-    if (existingLeaveAttendance) {
+    if (existingApprovedLeave) {
       return res.status(409).json({
-        // 409 Conflict indicates resource already exists/is in a state that conflicts
-        message: "You are already on leave for today.",
+        message: `You are already on an approved leave for today (${todayISTString}).`,
         success: false,
-        attendanceRecord: existingLeaveAttendance,
+        attendanceRecord: existingApprovedLeave,
       });
     }
 
-    // Check for an existing open attendance record for today
+    // Check for an existing open attendance record for today (IST)
     const existingOpenAttendance = user.attendence_list.find(
       (att) =>
         att.date &&
-        att.date.toISOString().split("T")[0] === today &&
+        getRecordDateISTString(att.date) === todayISTString && // Use IST comparison
         att.status === "present" &&
         !att.exit_time // Check if exit_time is not set (implies open record)
     );
 
     if (existingOpenAttendance) {
       return res.status(409).json({
-        // 409 Conflict indicates resource already exists/is in a state that conflicts
-        message: "You are already checked in for today.",
+        message: `You are already checked in for today (${todayISTString}).`,
         success: false,
         attendanceRecord: existingOpenAttendance,
       });
     }
 
-    // Optional: Check if the user has already completed a check-in/out for today
-    // If you want to allow only ONE complete attendance cycle per day.
+    // Check if the user has already completed a check-in/out for today (IST)
     const existingCompletedAttendance = user.attendence_list.find(
       (att) =>
         att.date &&
-        att.date.toISOString().split("T")[0] === today &&
+        getRecordDateISTString(att.date) === todayISTString && // Use IST comparison
         att.status === "present" &&
         att.exit_time // Check if exit_time is set (implies completed record)
     );
 
     if (existingCompletedAttendance) {
       return res.status(409).json({
-        message:
-          "You have already completed your attendance for today. Multiple check-ins are not allowed.",
+        message: `You have already completed your attendance for today (${todayISTString}). Multiple check-ins are not allowed.`,
         success: false,
         attendanceRecord: existingCompletedAttendance,
       });
     }
 
-    // If no existing open or completed record for today, create a new one
+    // If no existing record for today (IST), create a new one
     const newAttendanceRecord = {
-      date: now, // Store the full date for easy querying
-      entry_time: now, // Store the full Date object including time
-      exit_time: null, // Initialize as null or undefined, to be filled on checkout
-      day_count: "0", // Default to "0", will be calculated on checkout
+      date: now, // Store the full Date object. MongoDB will store it as UTC.
+      // For entry_time string, use toLocaleString with IST timezone
+      entry_time: now.toLocaleString("en-IN", {
+        timeZone: "Asia/Kolkata",
+        hour12: false,
+        weekday: "short",
+        year: "numeric",
+        month: "short",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        timeZoneName: "long",
+      }),
+      // This will produce a string like: "Thu Jul 24 2025 23:24:49 GMT+0530 (India Standard Time)"
+      exit_time: null, // Initialize as null
+      day_count: "0",
       entry_time_location,
-      status: "present", // User is now present
+      status: "present",
     };
 
     user.attendence_list.push(newAttendanceRecord);
@@ -346,7 +378,7 @@ exports.checkInUser = async (req, res) => {
 
     res.status(200).json({
       message: "User checked in successfully.",
-      attendanceRecord: newAttendanceRecord, // Return the newly created record
+      attendanceRecord: newAttendanceRecord,
       success: true,
     });
   } catch (error) {
@@ -362,23 +394,35 @@ exports.checkOutUser = async (req, res) => {
   try {
     const { exit_time_location } = req.body;
 
-    if (!req.user || !req.userType) {
+    if (!req.user || !req.user._id) {
+      // Ensure req.user._id is present
       return res.status(401).json({
         message: "Authentication required. User not identified.",
-        success: false, // Added for consistency
+        success: false,
       });
     }
 
     if (!exit_time_location) {
       return res.status(400).json({
         message: "Exit time locations are required.",
-        success: false, // Added for consistency
+        success: false,
       });
     }
 
     const userId = req.user._id;
-    const now = new Date();
-    const today = now.toISOString().split("T")[0]; // "YYYY-MM-DD" for comparison
+    const now = new Date(); // Get current date/time (server's local, but internally UTC)
+
+    // --- CRITICAL CHANGE: Get today's date string for comparison in IST ---
+    const options = {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      timeZone: "Asia/Kolkata", // Specify Indian Standard Time (IST)
+    };
+    const todayISTString = new Intl.DateTimeFormat("en-CA", options).format(
+      now
+    );
+    // Example: if now is July 25, 2025, 1:00 AM IST, todayISTString will be "2025-07-25"
 
     const user = await User.findById(userId);
 
@@ -389,34 +433,44 @@ exports.checkOutUser = async (req, res) => {
       });
     }
 
-    // Find the attendance record for today that has an entry_time but no exit_time
-    // We iterate backwards to find the most recent check-in, though with "one check-in per day",
-    // there should ideally be only one such record.
+    // Helper to get a record's date in IST YYYY-MM-DD format for accurate comparison
+    const getRecordDateISTString = (recordDate) => {
+      if (!recordDate) return null;
+      try {
+        // Ensure it's a Date object before formatting (Mongoose usually returns Date objects)
+        const dateObj = new Date(recordDate);
+        return new Intl.DateTimeFormat("en-CA", options).format(dateObj);
+      } catch (e) {
+        console.error("Error formatting record date for IST comparison:", e);
+        return null;
+      }
+    };
+
+    // Find the attendance record for today (IST) that has an entry_time but no exit_time
     let targetAttendanceIndex = -1;
     for (let i = user.attendence_list.length - 1; i >= 0; i--) {
       const att = user.attendence_list[i];
-      // Check if it's today's record and exit_time is not set (meaning it's an open record)
       if (
         att.date &&
-        att.date.toISOString().split("T")[0] === today &&
-        !att.exit_time &&
+        getRecordDateISTString(att.date) === todayISTString && // Use IST comparison
+        !att.exit_time && // Check if exit_time is not set (implies open record)
         att.status === "present"
       ) {
         targetAttendanceIndex = i;
-        break; // Found the most recent open record for today
+        break; // Found the most recent open record for today (IST)
       }
     }
 
     if (targetAttendanceIndex === -1) {
       return res.status(400).json({
-        message: "No open check-in record found for today to mark exit.",
+        message: `No open check-in record found for today (${todayISTString}) to mark exit.`,
         success: false,
       });
     }
 
     const attendanceRecord = user.attendence_list[targetAttendanceIndex];
 
-    // Ensure entry_time exists before proceeding (should be present if checkInUser worked)
+    // Ensure entry_time exists before proceeding
     if (!attendanceRecord.entry_time) {
       return res.status(500).json({
         message: "Corrupted attendance record: missing entry time.",
@@ -424,68 +478,74 @@ exports.checkOutUser = async (req, res) => {
       });
     }
 
-    // Set exit time using the current Date object
+    // Set exit_time: Store the full Date object (will be UTC in MongoDB)
     attendanceRecord.exit_time = now;
+    // Store exit_time_location
+    attendanceRecord.exit_time_location = exit_time_location; // Assign the received location data
 
     // --- Calculate day_count based on your specific logic ---
-    const entryDateTime = new Date(attendanceRecord.entry_time); // Ensure it's a Date object
-    const exitDateTime = new Date(attendanceRecord.exit_time); // Ensure it's a Date object
+    // Ensure entryDateTime is correctly parsed from the stored string.
+    // The entry_time string format "Thu Jul 24 2025 23:24:49 GMT+0530 (India Standard Time)"
+    // is usually parsable by Date.parse(), but it's always good to be cautious.
+    const entryDateTime = new Date(attendanceRecord.entry_time);
+    const exitDateTime = new Date(attendanceRecord.exit_time);
+
+    // Validate if parsing was successful
+    if (isNaN(entryDateTime.getTime()) || isNaN(exitDateTime.getTime())) {
+      return res.status(500).json({
+        message: "Failed to parse entry/exit times for duration calculation.",
+        success: false,
+      });
+    }
 
     // Calculate duration in milliseconds
     let durationMs = exitDateTime.getTime() - entryDateTime.getTime();
 
-    // Handle potential overnight shifts (if entry time is late evening and exit is early morning next day)
-    // This part of the logic assumes that the entry and exit are for the same *calendar day*.
-    // If an overnight shift means entry is one day and exit is the *next* day,
-    // your 'today' comparison will not find the entry and this logic needs re-evaluation.
-    // For typical office hours, this check below might not be strictly necessary if you
-    // expect check-in and check-out to always be on the same calendar date.
+    // Check for negative duration: if exit is before entry or if it's an overnight
+    // shift where the 'today' comparison didn't bridge the days.
     if (durationMs < 0) {
-      // This implies the exit time is chronologically before the entry time on the same date.
-      // This usually indicates an error or a misunderstanding of timestamps.
-      // If it's a genuine overnight shift, the 'today' comparison in findIndex would fail to match.
-      // For simplicity and clarity, assuming same-day check-in/out for now.
-      // If overnight shifts are a primary concern, you'd need to consider a different way
-      // to find the 'open' record that spans days.
+      // This implies an entry from a previous day's IST which this checkout is for.
+      // Or a logical error. If allowing multi-day shifts, the `findIndex` logic
+      // needs to be re-evaluated to find open records regardless of the calendar day.
       console.warn(
-        "Negative duration detected. Entry:",
-        entryDateTime,
+        "Negative duration calculated for attendance record. This might indicate an overnight shift or data issue.",
+        "Entry:",
+        attendanceRecord.entry_time,
         "Exit:",
-        exitDateTime
+        now,
+        "Duration (ms):",
+        durationMs
       );
-      durationMs = 0; // Or handle as an error, or adjust logic if multi-day shifts are expected.
+      // For now, if negative, we can default to 0 hours or flag an error.
+      // Assuming single-day attendance:
+      durationMs = 0; // Treat as 0 hours for calculation purposes if logic is for same-day
     }
 
     const durationHours = durationMs / (1000 * 60 * 60); // Convert milliseconds to hours
 
-    // Apply the day_count logic - Refined based on common attendance policies:
-    // (This is a more typical way to define full/half day based on duration,
-    // rather than just entry time, but you can adjust to your specific needs)
+    // Apply the day_count logic
     if (durationHours >= 8) {
-      // Assuming 8 hours is a full workday
       attendanceRecord.day_count = "1";
-      attendanceRecord.status = "present"; // User is present for a full day
+      attendanceRecord.status = "present";
     } else if (durationHours >= 4) {
-      // Assuming 4 hours is a half workday
       attendanceRecord.day_count = "0.5";
-      attendanceRecord.status = "present"; // User is present for a half day
+      attendanceRecord.status = "present";
     } else if (durationHours > 0) {
-      // If worked but less than half day threshold, still mark as 0.5 or 0 based on policy
-      // This case might be tricky; you might want to consider it 0.5 or 0.
-      attendanceRecord.day_count = "0.5"; // Or "0" if very short duration means no count
-      attendanceRecord.status = "present"; // Still present, just for short duration
+      // Worked some time but less than half day threshold
+      attendanceRecord.day_count = "0.5"; // Or "0" based on your exact policy
+      attendanceRecord.status = "present";
     } else {
-      // Duration is 0 or negative (should not happen with correct data/logic flow)
+      // Duration is 0 or negative
       attendanceRecord.day_count = "0";
-      attendanceRecord.status = "absent"; // Consider absent if no work done after check-in
+      attendanceRecord.status = "absent"; // Consider absent if no effective work done
     }
 
     await user.save(); // Save the updated user document
 
     res.status(200).json({
       message: "Check out successful. Attendance updated.",
-      attendanceRecord: attendanceRecord, // Return the updated record for confirmation
-      success: true, // Added for consistency
+      attendanceRecord: attendanceRecord, // Return the updated record
+      success: true,
     });
   } catch (error) {
     console.error("Check out error:", error);
@@ -498,7 +558,8 @@ exports.checkOutUser = async (req, res) => {
 
 exports.applyLeave = async (req, res) => {
   try {
-    if (!req.user || !req.userType) {
+    if (!req.user || !req.user._id) {
+      // Ensure req.user._id is present
       return res.status(401).json({
         message: "Authentication required. User not identified.",
         success: false,
@@ -518,8 +579,7 @@ exports.applyLeave = async (req, res) => {
 
     const { date, leave_reason } = req.body;
 
-    // Normalize the requested leave date to YYYY-MM-DD for comparison
-    // Ensure date is a valid Date object from req.body
+    // Validate and normalize the requested leave date
     const requestedLeaveDate = new Date(date);
     if (isNaN(requestedLeaveDate.getTime())) {
       return res.status(400).json({
@@ -527,20 +587,20 @@ exports.applyLeave = async (req, res) => {
         success: false,
       });
     }
-    const requestedLeaveDateString = requestedLeaveDate
-      .toISOString()
-      .split("T")[0];
+    // Set hours to UTC start of day to ensure consistent date comparison regardless of timezone
+    requestedLeaveDate.setUTCHours(0, 0, 0, 0);
 
     // Find if an attendance record for this specific date already exists
     let existingAttendanceRecord = user.attendence_list.find((att) => {
-      // Handle cases where att.date is missing or invalid
+      // Ensure att.date is a valid Date object for comparison
       if (!att.date) return false;
       const recordDate = new Date(att.date);
-      if (isNaN(recordDate.getTime())) return false; // If att.date is an invalid date string
+      if (isNaN(recordDate.getTime())) return false;
 
-      return (
-        recordDate.toISOString().split("T")[0] === requestedLeaveDateString
-      );
+      // Normalize recordDate to UTC start of day for accurate comparison
+      recordDate.setUTCHours(0, 0, 0, 0);
+
+      return recordDate.getTime() === requestedLeaveDate.getTime();
     });
 
     if (existingAttendanceRecord) {
@@ -549,7 +609,21 @@ exports.applyLeave = async (req, res) => {
         // If entry_time is present, user already checked in for that day.
         // Cannot request full-day leave if already checked in.
         return res.status(400).json({
-          message: `Cannot request leave for ${requestedLeaveDateString}. You have already checked in for this day.`,
+          message: `Cannot request leave for ${
+            requestedLeaveDate.toISOString().split("T")[0]
+          }. You have already checked in for this day.`,
+          success: false,
+        });
+      } else if (
+        existingAttendanceRecord.status === "leave" &&
+        existingAttendanceRecord.leave_approval === "pending"
+      ) {
+        // If a pending leave request already exists for this date, inform user
+        return res.status(409).json({
+          // 409 Conflict
+          message: `A pending leave request already exists for ${
+            requestedLeaveDate.toISOString().split("T")[0]
+          }.`,
           success: false,
         });
       } else {
@@ -562,6 +636,11 @@ exports.applyLeave = async (req, res) => {
         existingAttendanceRecord.entry_time = "";
         existingAttendanceRecord.exit_time = "";
         existingAttendanceRecord.day_count = "0"; // A leave day typically counts as 0 work days
+        // Clear locations if they exist for a non-present status
+        if (existingAttendanceRecord.entry_time_location)
+          existingAttendanceRecord.entry_time_location = undefined;
+        if (existingAttendanceRecord.exit_time_location)
+          existingAttendanceRecord.exit_time_location = undefined;
       }
     } else {
       // Scenario 2: No record exists for the date. Create a new one.
@@ -624,19 +703,18 @@ exports.getLeaveRequests = async (req, res) => {
       });
     }
 
-    let matchQuery = {
-      "attendence_list.status": "leave", // Always filter for leave records
-    };
+    let initialMatchQuery = {}; // Match fields on the User document itself
 
-    // Filter by specific userId if provided
+    // Filter by specific userId (MongoDB _id) if provided
     if (userId) {
+      // Assuming userId in query is the MongoDB ObjectId
       if (!mongoose.Types.ObjectId.isValid(userId)) {
         return res.status(400).json({
-          message: "Invalid userId format.",
+          message: "Invalid userId format. Must be a valid ObjectId.",
           success: false,
         });
       }
-      matchQuery._id = new mongoose.Types.ObjectId(userId); // Match user by ObjectId
+      initialMatchQuery._id = new mongoose.Types.ObjectId(userId);
     }
 
     // Filter by userType (designation) if provided
@@ -648,6 +726,7 @@ exports.getLeaveRequests = async (req, res) => {
         "Admin",
         "HR",
       ];
+      // Normalize userType to match enum casing
       const normalizedUserType =
         userType.charAt(0).toUpperCase() + userType.slice(1).toLowerCase();
 
@@ -659,8 +738,13 @@ exports.getLeaveRequests = async (req, res) => {
           success: false,
         });
       }
-      matchQuery.designation = normalizedUserType;
+      initialMatchQuery.designation = normalizedUserType;
     }
+
+    // Match conditions for the unwound attendance list
+    let attendanceMatchQuery = {
+      "attendence_list.status": "leave", // Always filter for leave records
+    };
 
     // Filter by leave_approval status if provided
     if (status) {
@@ -671,7 +755,8 @@ exports.getLeaveRequests = async (req, res) => {
           success: false,
         });
       }
-      matchQuery["attendence_list.leave_approval"] = status.toLowerCase();
+      attendanceMatchQuery["attendence_list.leave_approval"] =
+        status.toLowerCase();
     }
 
     // Filter by date range for the attendance record
@@ -687,40 +772,31 @@ exports.getLeaveRequests = async (req, res) => {
         endOfDay.setUTCHours(23, 59, 59, 999); // End of day in UTC
         dateConditions.$lte = endOfDay;
       }
-      matchQuery["attendence_list.date"] = dateConditions;
+      attendanceMatchQuery["attendence_list.date"] = dateConditions;
     }
 
     // Aggregation pipeline for efficient querying
     const pipeline = [
-      { $match: matchQuery }, // Initial match on the User document and specific attendance fields if possible
+      { $match: initialMatchQuery }, // Initial match on the User document
       { $unwind: "$attendence_list" }, // Deconstruct the attendence_list array
 
-      // Add a second $match stage specific to unwound attendance list items
-      // This is crucial because some matchQuery fields (like 'attendence_list.status')
-      // only work correctly *after* $unwind.
-      {
-        $match: {
-          "attendence_list.status": "leave", // Re-match for leave status after unwind
-        },
-      },
-      // Important: Add any specific leave_approval and date filters here if they were not applied in the initial matchQuery,
-      // or if you want to ensure they apply *after* unwind. For simple string/date range matches,
-      // they should work fine in the first match stage on the parent array.
+      // Match on the unwound attendance list items
+      { $match: attendanceMatchQuery },
 
       {
         $project: {
-          _id: 0,
-          userId: "$_id",
+          _id: 0, // Exclude the default _id from the root document
+          userId: "$_id", // The MongoDB ObjectId of the user
           userType: "$designation",
           userCId: "$userId", // This is the string userId, like "EMP-001"
           userName: "$name",
           userNumber: "$phone",
 
-          attendanceRecordId: "$attendence_list._id",
+          attendanceRecordId: "$attendence_list._id", // The _id of the specific subdocument
           date: "$attendence_list.date",
           leave_reason: "$attendence_list.leave_reason",
           leave_approval: "$attendence_list.leave_approval",
-          status: "$attendence_list.status",
+          status: "$attendence_list.status", // This will always be "leave" due to the $match
         },
       },
       {
@@ -733,13 +809,9 @@ exports.getLeaveRequests = async (req, res) => {
 
     // Pipeline for counting total matching documents (for pagination metadata)
     const countPipeline = [
-      { $match: matchQuery },
+      { $match: initialMatchQuery },
       { $unwind: "$attendence_list" },
-      {
-        $match: {
-          "attendence_list.status": "leave",
-        },
-      },
+      { $match: attendanceMatchQuery },
       { $count: "totalCount" },
     ];
 
@@ -770,10 +842,9 @@ exports.getLeaveRequests = async (req, res) => {
   }
 };
 
-// --- NEW: updateLeaveRequest Controller Function ---
 exports.updateLeaveRequest = async (req, res) => {
   try {
-    const { userId, recordId } = req.params; // Get userId and recordId from URL parameters
+    const { userId, recordId } = req.params; // Get userId (MongoDB _id) and recordId (subdocument _id) from URL parameters
     const { leave_approval } = req.body; // Get new approval status from body
 
     // Validate leave_approval value
@@ -786,13 +857,16 @@ exports.updateLeaveRequest = async (req, res) => {
       });
     }
 
-    // Find the user by userId
-    const user = await User.findOne({
-      $or: [
-        { _id: mongoose.Types.ObjectId.isValid(userId) ? userId : null },
-        { userId },
-      ],
-    });
+    // Validate userId format (assuming it's a MongoDB ObjectId)
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({
+        message: "Invalid user ID format. Must be a valid ObjectId.",
+        success: false,
+      });
+    }
+
+    // Find the user by their MongoDB ObjectId
+    const user = await User.findById(userId);
 
     if (!user) {
       return res.status(404).json({
@@ -802,7 +876,8 @@ exports.updateLeaveRequest = async (req, res) => {
     }
 
     // Find the specific attendance record within the user's attendence_list
-    const attendanceRecord = user.attendence_list.id(recordId); // Mongoose's .id() method for subdocuments
+    // Mongoose's .id() method is efficient for finding subdocuments by their _id
+    const attendanceRecord = user.attendence_list.id(recordId);
 
     if (!attendanceRecord) {
       return res.status(404).json({
@@ -815,7 +890,16 @@ exports.updateLeaveRequest = async (req, res) => {
     if (attendanceRecord.status !== "leave") {
       return res.status(400).json({
         message:
-          "Cannot update approval for a record that is not a leave request.",
+          "Cannot update approval for a record that is not a leave request. Its status is: " +
+          attendanceRecord.status,
+        success: false,
+      });
+    }
+
+    // Prevent re-approving or re-rejecting if already in that state
+    if (attendanceRecord.leave_approval === leave_approval) {
+      return res.status(400).json({
+        message: `Leave request is already in '${leave_approval}' status. No change needed.`,
         success: false,
       });
     }
@@ -826,7 +910,7 @@ exports.updateLeaveRequest = async (req, res) => {
     await user.save(); // Save the updated user document
 
     res.status(200).json({
-      message: `Leave request ${recordId} for user ${userId} updated to ${leave_approval}.`,
+      message: `Leave request ${recordId} for user ${user.userId} updated to ${leave_approval}.`, // Using user.userId (string ID) in message
       updatedRecord: attendanceRecord,
       success: true,
     });

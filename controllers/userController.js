@@ -6,6 +6,7 @@ const bcrypt = require("bcryptjs");
 const axios = require("axios");
 const mongoose = require("mongoose");
 const generateCustomId = require("../middleware/generateCustomId");
+const businessModel = require("../models/businessModel");
 
 dotenv.config();
 // Get all users
@@ -453,5 +454,46 @@ exports.updateUser = async (req, res) => {
   } catch (error) {
     console.error("Error updating User:", error.message);
     res.status(500).json({ message: "Error updating User", error });
+  }
+};
+
+exports.getUserFilters = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const businesses = await businessModel
+      .find({
+        $or: [
+          { created_by: userId },
+          { appoint_to: userId },
+          { lead_by: userId },
+        ],
+      })
+      .populate("city")
+      .populate("category");
+
+    // Extract unique city _ids and category _ids
+    const uniqueCityIds = [
+      ...new Set(
+        businesses
+          .map((business) => (business.city ? business.city : null))
+          .filter(Boolean)
+      ),
+    ];
+    const uniqueCategoryIds = [
+      ...new Set(
+        businesses
+          .map((business) => (business.category ? business.category : null))
+          .filter(Boolean)
+      ),
+    ];
+
+    // Send the unique _ids as a proper object
+    res.status(200).json({
+      cities: uniqueCityIds,
+      categories: uniqueCategoryIds,
+    });
+  } catch (error) {
+    console.error("Error fetching user filters:", error);
+    res.status(500).json({ message: "Error fetching user filters" });
   }
 };

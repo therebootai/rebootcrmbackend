@@ -1,5 +1,6 @@
 const notificationModel = require("../models/notificationModel");
 const mongoose = require("mongoose");
+
 exports.getNotifications = async (req, res) => {
   try {
     const {
