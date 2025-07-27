@@ -497,3 +497,4 @@ exports.getUserFilters = async (req, res) => {
     res.status(500).json({ message: "Error fetching user filters" });
   }
 };
+

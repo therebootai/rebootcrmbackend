@@ -58,17 +58,14 @@ exports.getUserByPhone = async (req, res) => {
       return res.status(400).json({ message: "Phone number is required." });
     }
 
-    let user =
-      (await BDE.findOne({ mobileNumber: phone })) ||
-      (await Telecaller.findOne({ mobileNumber: phone })) ||
-      (await DigitalMarketer.findOne({ mobileNumber: phone }));
+    let user = await User.findOne({ phone });
 
     if (!user) {
       return res.json({ exists: false, message: "Phone number not found." });
     }
 
     // Check if user is inactive
-    if (user.status === "inactive") {
+    if (!user.status) {
       return res.json({
         exists: true,
         active: false,
@@ -95,7 +92,7 @@ exports.sendOtp = async (req, res) => {
 
     const formattedPhone = phone.startsWith("91") ? phone : "91" + phone;
 
-    let user = User.findOne({ phone: phone });
+    let user = await User.findOne({ phone: phone });
 
     let name = "User";
 
@@ -180,7 +177,7 @@ exports.verifyWithOtp = async (req, res) => {
       otpStorage[formattedPhone].otp === otp &&
       otpStorage[formattedPhone].expiresAt > Date.now()
     ) {
-      const user = await User.findOne({ mobileNumber: formattedPhone });
+      const user = await User.findOne({ phone });
 
       // 5. User Existence and Status Checks
       if (!user) {
