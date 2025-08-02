@@ -498,3 +498,224 @@ exports.getUserFilters = async (req, res) => {
   }
 };
 
+exports.getUserAnalytics = async (req, res) => {
+  try {
+    const { user_id } = req.params;
+    const { start_date, end_date } = req.query;
+
+    const finalBusinessAndConditions = [];
+    let userIdForUserAnalytics = null;
+    let userData = null;
+    let userAnalytics = {};
+
+    // 1. Construct User-Specific Business Filter (if user_id is provided)
+    if (user_id) {
+      userIdForUserAnalytics = new mongoose.Types.ObjectId(user_id);
+      userData = await User.findById(userIdForUserAnalytics);
+
+      if (!userData) {
+        return res.status(404).json({ message: "User not found." });
+      }
+
+      userAnalytics.designation = userData.designation;
+      userAnalytics.userName = userData.name;
+      userAnalytics.userId = userData.userId;
+
+      const userBusinessOrConditions = [];
+
+      if (userData.designation !== "Admin") {
+        userBusinessOrConditions.push({ lead_by: userIdForUserAnalytics });
+        userBusinessOrConditions.push({ appoint_to: userIdForUserAnalytics });
+        if (userData.assignCategories && userData.assignCategories.length > 0) {
+          userBusinessOrConditions.push({
+            category: { $in: userData.assignCategories },
+          });
+        }
+        if (userData.assignCities && userData.assignCities.length > 0) {
+          userBusinessOrConditions.push({
+            city: { $in: userData.assignCities },
+          });
+        }
+      } else {
+        userBusinessOrConditions.push({ category: { $exists: true } });
+        userBusinessOrConditions.push({ city: { $exists: true } });
+      }
+      userBusinessOrConditions.push({ created_by: userIdForUserAnalytics });
+
+      if (userBusinessOrConditions.length > 0) {
+        finalBusinessAndConditions.push({ $or: userBusinessOrConditions });
+      }
+    }
+
+    // 2. Construct Date Range Business Filter (if dates are provided)
+    if (start_date && end_date) {
+      const startDate = new Date(start_date);
+      const endDate = new Date(end_date);
+
+      const dateOrConditions = [
+        { followUpDate: { $gte: startDate, $lte: endDate } },
+        { appointmentDate: { $gte: startDate, $lte: endDate } },
+        { "visit_result.follow_up_date": { $gte: startDate, $lte: endDate } },
+        { createdAt: { $gte: startDate, $lte: endDate } }, // Now correctly includes createdAt
+      ];
+      finalBusinessAndConditions.push({ $or: dateOrConditions });
+    }
+
+    // Combine all constructed conditions into the final businessMatchQuery
+    let businessMatchQuery = {};
+    if (finalBusinessAndConditions.length > 0) {
+      businessMatchQuery = { $and: finalBusinessAndConditions };
+    }
+
+    // Aggregate Business Data
+    const businessAnalyticsPipeline = [
+      { $match: businessMatchQuery }, // This is the main filter applying date and user overall criteria
+      {
+        $facet: {
+          totalBusinesses: [{ $count: "count" }], // Count of all businesses matching the main query
+          followupCount: [
+            {
+              $match: {
+                $or: [
+                  { status: "Followup" },
+                  { "visit_result.reason": "Followup" },
+                ],
+              },
+            },
+            { $count: "count" },
+          ],
+          appointmentCount: [
+            { $match: { status: "Appointment Generated" } },
+            { $count: "count" },
+          ],
+          visitCount: [{ $match: { status: "Visited" } }, { $count: "count" }],
+          dealCloseCount: [
+            {
+              $match: {
+                $or: [
+                  { status: "Deal Closed" },
+                  { "visit_result.reason": "Deal Closed" },
+                ],
+              },
+            },
+            { $count: "count" },
+          ],
+          // NEW: Specific count for businesses created by the current user
+          // This will only be included in the facet if user_id is provided
+          ...(userIdForUserAnalytics
+            ? {
+                businessesCreatedByCurrentUserCount: [
+                  { $match: { created_by: userIdForUserAnalytics } },
+                  { $count: "count" },
+                ],
+              }
+            : {}),
+        },
+      },
+      {
+        $project: {
+          totalBusinesses: {
+            $ifNull: [{ $arrayElemAt: ["$totalBusinesses.count", 0] }, 0],
+          },
+          followupCount: {
+            $ifNull: [{ $arrayElemAt: ["$followupCount.count", 0] }, 0],
+          },
+          appointmentCount: {
+            $ifNull: [{ $arrayElemAt: ["$appointmentCount.count", 0] }, 0],
+          },
+          visitCount: {
+            $ifNull: [{ $arrayElemAt: ["$visitCount.count", 0] }, 0],
+          },
+          dealCloseCount: {
+            $ifNull: [{ $arrayElemAt: ["$dealCloseCount.count", 0] }, 0],
+          },
+          // Map the new specific count to the desired output key
+          created_businesses_count: {
+            $ifNull: [
+              {
+                $arrayElemAt: ["$businessesCreatedByCurrentUserCount.count", 0],
+              },
+              0,
+            ],
+          },
+        },
+      },
+    ];
+
+    const businessAnalyticsResult = await businessModel.aggregate(
+      businessAnalyticsPipeline
+    );
+    const {
+      totalBusinesses,
+      followupCount,
+      appointmentCount,
+      visitCount,
+      dealCloseCount,
+      created_businesses_count, // This will now correctly reflect businesses created by this user
+    } = businessAnalyticsResult[0] || {};
+
+    // User specific analytics (targets, attendance)
+    if (userIdForUserAnalytics && userData) {
+      let totalTargetsAmount = 0;
+      let totalAchievement = 0;
+      let totalCollection = 0;
+
+      if (userData.targets && userData.targets.length > 0) {
+        userData.targets.forEach((target) => {
+          if (target.amount) totalTargetsAmount += target.amount;
+          if (target.achievement)
+            totalAchievement += parseFloat(target.achievement) || 0;
+          if (target.collection)
+            totalCollection += parseFloat(target.collection) || 0;
+        });
+      }
+      userAnalytics.totalTargetsAmount = totalTargetsAmount;
+      userAnalytics.totalAchievement = totalAchievement;
+      userAnalytics.totalCollection = totalCollection;
+
+      let presentCount = 0;
+      let absentCount = 0;
+      let leaveCount = 0;
+      let totalDayCount = 0;
+
+      let filteredAttendance = userData.attendence_list;
+      if (start_date && end_date) {
+        const startDate = new Date(start_date);
+        const endDate = new Date(end_date);
+        filteredAttendance = userData.attendence_list.filter((att) => {
+          const attDate = new Date(att.date);
+          return attDate >= startDate && attDate <= endDate;
+        });
+      }
+
+      filteredAttendance.forEach((att) => {
+        totalDayCount = totalDayCount + parseFloat(att.day_count);
+        if (att.status === "present") presentCount++;
+        else if (att.status === "absent") absentCount++;
+        else if (att.status === "leave") leaveCount++;
+      });
+
+      userAnalytics.attendance = {
+        present: presentCount,
+        absent: absentCount,
+        leave: leaveCount,
+        totalDayCount,
+      };
+    }
+
+    res.status(200).json({
+      totalBusinesses,
+      followupCount,
+      appointmentCount,
+      visitCount,
+      dealCloseCount,
+      created_businesses_count,
+      ...userAnalytics,
+    });
+  } catch (error) {
+    console.error("Error fetching analytics:", error);
+    res
+      .status(500)
+      .json({ message: "Internal server error", error: error.message });
+  }
+};

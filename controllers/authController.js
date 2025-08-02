@@ -1,10 +1,35 @@
-const BDE = require("../models/bdeModel");
-const Telecaller = require("../models/telecallerModel");
-const DigitalMarketer = require("../models/digitalMarketerModel");
 const axios = require("axios");
 const mongoose = require("mongoose");
 const User = require("../models/user");
 const { createToken } = require("../middleware/checkAuth");
+
+function parseISTString(timeString) {
+  // Example string: "Sat, 02 Aug, 2025, 17:41:26 India Standard Time"
+  const monthMap = {
+    Jan: 0,
+    Feb: 1,
+    Mar: 2,
+    Apr: 3,
+    May: 4,
+    Jun: 5,
+    Jul: 6,
+    Aug: 7,
+    Sep: 8,
+    Oct: 9,
+    Nov: 10,
+    Dec: 11,
+  };
+
+  const parts = timeString.match(
+    /(\w+), (\d+) (\w+), (\d+), (\d+):(\d+):(\d+)/
+  );
+  if (!parts) return new Date(NaN); // Return an invalid date if regex fails
+
+  const [_, dayOfWeek, day, monthName, year, hour, minute, second] = parts;
+  const month = monthMap[monthName];
+
+  return new Date(year, month, day, hour, minute, second);
+}
 
 exports.login = async (req, res) => {
   const { mobileNumber, password } = req.body;
@@ -476,7 +501,18 @@ exports.checkOutUser = async (req, res) => {
     }
 
     // Set exit_time: Store the full Date object (will be UTC in MongoDB)
-    attendanceRecord.exit_time = now;
+    attendanceRecord.exit_time = now.toLocaleString("en-IN", {
+      timeZone: "Asia/Kolkata",
+      hour12: false,
+      weekday: "short",
+      year: "numeric",
+      month: "short",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      timeZoneName: "long",
+    });
     // Store exit_time_location
     attendanceRecord.exit_time_location = exit_time_location; // Assign the received location data
 
@@ -484,8 +520,8 @@ exports.checkOutUser = async (req, res) => {
     // Ensure entryDateTime is correctly parsed from the stored string.
     // The entry_time string format "Thu Jul 24 2025 23:24:49 GMT+0530 (India Standard Time)"
     // is usually parsable by Date.parse(), but it's always good to be cautious.
-    const entryDateTime = new Date(attendanceRecord.entry_time);
-    const exitDateTime = new Date(attendanceRecord.exit_time);
+    const entryDateTime = parseISTString(attendanceRecord.entry_time);
+    const exitDateTime = parseISTString(attendanceRecord.exit_time);
 
     // Validate if parsing was successful
     if (isNaN(entryDateTime.getTime()) || isNaN(exitDateTime.getTime())) {
