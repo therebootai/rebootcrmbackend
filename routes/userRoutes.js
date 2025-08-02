@@ -21,4 +21,6 @@ router.put("/users/reset-password", userController.resetPassword);
 
 router.put("/users/:userId", userController.updateUser);
 
+router.get("/analytics/:user_id", userController.getUserAnalytics);
+
 module.exports = router;

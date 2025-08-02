@@ -1,7 +1,4 @@
 const business = require("../models/businessModel");
-const Telecaller = require("../models/telecallerModel");
-const BDE = require("../models/bdeModel");
-const DigitalMarketer = require("../models/digitalMarketerModel");
 const path = require("path");
 const fs = require("fs");
 const fastcsv = require("fast-csv");
