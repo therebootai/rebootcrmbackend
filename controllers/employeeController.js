@@ -1,6 +1,7 @@
-const { default: axios } = require("axios");
+const axios = require("axios");
 const Employee = require("../models/employeeModel");
 const fileUpload = require("express-fileupload");
+const mongoose = require("mongoose");
 const cloudinary = require("cloudinary").v2;
 
 cloudinary.config({
@@ -301,21 +302,30 @@ exports.deleteEmployee = async (req, res) => {
   try {
     const { employeeId } = req.params;
 
-    const employee = await Employee.findOneAndDelete({ employeeId });
+    const employee = await Employee.findOneAndDelete({
+      $or: [
+        { employeeId },
+        {
+          _id: mongoose.Types.ObjectId.isValid(employeeId)
+            ? employeeId
+            : undefined,
+        },
+      ],
+    });
     if (!employee) {
       return res.status(404).json({ message: "Employee not found" });
     }
 
     // Remove files from Cloudinary
-    if (employee.govtId.public_id)
+    if (employee.govtId?.public_id)
       await cloudinary.uploader.destroy(employee.govtId.public_id);
-    if (employee.experienceLetter.public_id)
+    if (employee.experienceLetter?.public_id)
       await cloudinary.uploader.destroy(employee.experienceLetter.public_id);
-    if (employee.bankDetails.public_id)
+    if (employee.bankDetails?.public_id)
       await cloudinary.uploader.destroy(employee.bankDetails.public_id);
-    if (employee.agreement.public_id)
+    if (employee.agreement?.public_id)
       await cloudinary.uploader.destroy(employee.agreement.public_id);
-    if (employee.profile_img.public_id)
+    if (employee.profile_img?.public_id)
       await cloudinary.uploader.destroy(employee.profile_img.public_id);
 
     res.status(200).json({ message: "Employee deleted successfully" });
