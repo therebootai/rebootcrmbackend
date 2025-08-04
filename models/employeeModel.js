@@ -40,7 +40,7 @@ const employeeSchema = new Schema({
       secure_url: { type: String },
       public_id: { type: String },
     },
-    required: true,
+    default: null,
   },
   agreement: {
     type: {
