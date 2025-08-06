@@ -8,6 +8,9 @@ cloudinary.config({
 });
 
 exports.uploadFile = async (tempFilePath, fileType) => {
+  if (!tempFilePath) {
+    throw new Error("No file provided or incorrect file path");
+  }
   try {
     let folderName = "images";
     let format = "jpg";

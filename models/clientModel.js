@@ -105,13 +105,13 @@ const clientSchema = new mongoose.Schema({
   },
   bdeName: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: "BDE",
+    ref: "User",
     required: false,
     default: null,
   },
   tmeLeads: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: "Telecaller",
+    ref: "User",
     required: false,
     default: null,
   },

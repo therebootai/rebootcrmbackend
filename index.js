@@ -1,5 +1,4 @@
 const express = require("express");
-const router = express.Router();
 const app = express();
 const bodyParser = require("body-parser");
 const cors = require("cors");
@@ -39,9 +38,6 @@ const leadsourceRoutes = require("./routes/leadsourceRoutes");
 const businessRoutes = require("./routes/businessRoutes");
 const candidateRoutes = require("./routes/candidateRoutes");
 const employeeRoutes = require("./routes/employeeRoutes");
-const telecallerRoutes = require("./routes/telecallerRoutes");
-const digitalMarketerRoutes = require("./routes/digitalMarketerRoutes");
-const bdeRoutes = require("./routes/bdeRoutes");
 const userRoutes = require("./routes/userRoutes");
 const authRoutes = require("./routes/authRoutes");
 const waimageRoutes = require("./routes/waimageRoutes");
@@ -51,11 +47,9 @@ const careerJobPostRoutes = require("./routes/careerJobPostRoutes");
 const applicationRoutes = require("./routes/applicationRoutes");
 const clientRoute = require("./routes/clientRoutes");
 const notificationRoutes = require("./routes/notificationRoute");
-const bdeModel = require("./models/bdeModel");
-const telecallerModel = require("./models/telecallerModel");
-const digitalMarketerModel = require("./models/digitalMarketerModel");
 const notificationModel = require("./models/notificationModel");
 const businessModel = require("./models/businessModel");
+const User = require("./models/user");
 
 app.use(cors());
 
@@ -76,11 +70,8 @@ app.use("/api/source", leadsourceRoutes);
 app.use("/api/business", businessRoutes);
 app.use("/api/candidate", candidateRoutes);
 app.use("/api/employee", employeeRoutes);
-app.use("/api/telecaller", telecallerRoutes);
-app.use("/api/digitalmarketer", digitalMarketerRoutes);
-app.use("/api/bde", bdeRoutes);
-app.use("/api", userRoutes);
-app.use("/api", authRoutes);
+app.use("/api/users", userRoutes);
+app.use("/api/auth", authRoutes);
 app.use("/api/waimage", waimageRoutes);
 app.use("/api/websiteleads", webSiteLeadsRoutes);
 app.use("/api/blogs", blogRoutes);
@@ -122,22 +113,17 @@ const sendFCMNotification = async (
       message.token = targetTokenOrTopic; // Set the token
       delete message.topic; // Ensure 'topic' is not present if 'token' is used
     } else {
-      // If neither a valid topic nor a valid token is provided, throw an error
       throw new Error(
         "FCM message must specify a valid token or a valid topic."
       );
     }
 
-    // Optional: Uncomment for debugging the final message object before sending
-    // console.log('FCM Message object before sending:', JSON.stringify(message, null, 2));
-
-    // Always use admin.messaging().send()
     const response = await admin.messaging().send(message);
 
     // Save notification record to database
     await notificationModel.create({
       userId: userId,
-      topic: topicForDb, // Store the topic if it was a topic message
+      topic: topicForDb,
       title: message.notification?.title || "No Title",
       body: message.notification?.body || "No Body",
       customData: message.data,
@@ -155,7 +141,6 @@ const sendFCMNotification = async (
       console.warn(
         `Invalid or expired FCM token for target: ${targetTokenOrTopic}. Consider removing from database.`
       );
-      // Implement logic to remove invalid token from your database here
     }
     // Still attempt to save a record even if FCM send fails
     try {
@@ -184,14 +169,8 @@ const sendFCMNotification = async (
 };
 
 app.post("/api/send-notification", async (req, res) => {
-  const {
-    targetUserId,
-    targetFcmToken, // This parameter name remains for external API consistency
-    topic,
-    title,
-    body,
-    customData,
-  } = req.body;
+  const { targetUserId, targetFcmToken, topic, title, body, customData } =
+    req.body;
 
   let message = {
     notification: {
@@ -212,44 +191,20 @@ app.post("/api/send-notification", async (req, res) => {
 
   let target;
   let userIdForDb = null;
-  // MODIFIED: Removed appTokenForDb declaration
   let topicForDb = null;
 
   try {
     if (targetUserId) {
-      let user;
-      user =
-        (await bdeModel.findOne({
-          $or: [
-            { bdeId: targetUserId },
-            {
-              _id: mongoose.Types.ObjectId.isValid(targetUserId)
-                ? targetUserId
-                : undefined,
-            },
-          ],
-        })) ||
-        (await telecallerModel.findOne({
-          $or: [
-            { telecallerId: targetUserId },
-            {
-              _id: mongoose.Types.ObjectId.isValid(targetUserId)
-                ? targetUserId
-                : undefined,
-            },
-          ],
-        })) ||
-        (await digitalMarketerModel.findOne({
-          $or: [
-            { digitalMarketerId: targetUserId },
-            {
-              _id: mongoose.Types.ObjectId.isValid(targetUserId)
-                ? targetUserId
-                : undefined,
-            },
-          ],
-        }));
-
+      let user = await User.findOne({
+        $or: [
+          {
+            _id: mongoose.Types.ObjectId.isValid(targetUserId)
+              ? targetUserId
+              : undefined,
+          },
+          { userId: targetUserId }, // Assuming a 'userId' field for lookup
+        ],
+      });
 
       if (!user || !user.apptoken) {
         return res.status(400).json({
@@ -257,28 +212,23 @@ app.post("/api/send-notification", async (req, res) => {
         });
       }
       target = user.apptoken;
-      userIdForDb = user._id; // Capture userId for DB storage
-      // MODIFIED: Removed appTokenForDb assignment
-      topicForDb = null; // Ensure topic is null if sending to a specific user
+      userIdForDb = user._id;
+      topicForDb = null;
     } else if (targetFcmToken) {
-      // Keep this for direct token input if needed
       target = targetFcmToken;
-      // MODIFIED: Removed appTokenForDb assignment
-      userIdForDb = null; // Ensure userId is null if sending directly to a token
-      topicForDb = null; // Ensure topic is null if sending directly to a token
+      userIdForDb = null;
+      topicForDb = null;
     } else if (topic) {
       target = topic;
       message.topic = topic;
-      topicForDb = topic; // Capture topic for DB storage
-      userIdForDb = null; // Ensure userId is null if sending to a topic
-      // MODIFIED: Removed appTokenForDb assignment
+      topicForDb = topic;
+      userIdForDb = null;
     } else {
       return res.status(400).json({
         message: "No target (token or topic) specified for notification.",
       });
     }
 
-    // MODIFIED: Removed appTokenForDb from parameters passed to sendFCMNotification
     const result = await sendFCMNotification(
       target,
       message,
@@ -305,8 +255,8 @@ app.post("/api/send-notification", async (req, res) => {
 });
 
 const checkAndNotifyLateCheckinsLogic = async () => {
-  const checkTimeHour = 11; // 12 PM
-  const checkTimeMinute = 30; // 0 minutes
+  const checkTimeHour = 11;
+  const checkTimeMinute = 30;
   const notificationTitle = "Reminder: Check-in Time!";
   const notificationBody =
     "It's past 11:30 AM. Please remember to check in for today's attendance.";
@@ -325,58 +275,57 @@ const checkAndNotifyLateCheckinsLogic = async () => {
     cutoffTimeIST.setHours(checkTimeHour, checkTimeMinute, 0, 0);
 
     if (now.getTime() < cutoffTimeIST.getTime()) {
-      console.log("It's before 12 PM IST. No reminders sent yet by cron job.");
-      return { message: "It's before 12 PM IST. No reminders sent yet." };
+      console.log(
+        "It's before 11:30 AM IST. No reminders sent yet by cron job."
+      );
+      return { message: "It's before 11:30 AM IST. No reminders sent yet." };
     }
 
+    // Find all users who are not Admin or HR and have an apptoken
+    const users = await User.find({
+      designation: { $nin: ["Admin", "HR"] },
+      apptoken: { $exists: true },
+    });
+
     const usersToNotify = [];
-    const userModels = [bdeModel, telecallerModel, digitalMarketerModel];
 
-    for (const Model of userModels) {
-      const users = await Model.find({});
+    for (const user of users) {
+      if (!user.attendence_list || !Array.isArray(user.attendence_list)) {
+        continue;
+      }
 
-      for (const user of users) {
+      const todayAttendance = user.attendence_list.find((att) => {
+        if (!att.date) return false;
+        const attDateIST = new Date(
+          att.date.toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
+        );
+        attDateIST.setHours(0, 0, 0, 0);
+        return attDateIST.getTime() === todayIST.getTime();
+      });
+
+      let needsNotification = false;
+      if (!todayAttendance || !todayAttendance.entry_time) {
+        needsNotification = true;
+      } else {
+        const entryTimeDate = new Date(
+          todayAttendance.entry_time.toLocaleString("en-US", {
+            timeZone: "Asia/Kolkata",
+          })
+        );
         if (
-          !user.attendence_list ||
-          !Array.isArray(user.attendence_list) ||
-          !user.apptoken
+          entryTimeDate.getHours() > checkTimeHour ||
+          (entryTimeDate.getHours() === checkTimeHour &&
+            entryTimeDate.getMinutes() >= checkTimeMinute)
         ) {
-          continue;
-        }
-
-        const todayAttendance = user.attendence_list.find((att) => {
-          if (!att.date) return false;
-          const attDateIST = new Date(
-            att.date.toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
-          );
-          attDateIST.setHours(0, 0, 0, 0);
-          return attDateIST.getTime() === todayIST.getTime();
-        });
-
-        let needsNotification = false;
-        if (!todayAttendance || !todayAttendance.entry_time) {
           needsNotification = true;
-        } else {
-          const entryTimeDate = new Date(
-            todayAttendance.entry_time.toLocaleString("en-US", {
-              timeZone: "Asia/Kolkata",
-            })
-          );
-          if (
-            entryTimeDate.getHours() > checkTimeHour ||
-            (entryTimeDate.getHours() === checkTimeHour &&
-              entryTimeDate.getMinutes() >= checkTimeMinute)
-          ) {
-            needsNotification = true;
-          }
         }
+      }
 
-        if (needsNotification) {
-          usersToNotify.push({
-            userId: user._id,
-            appToken: user.apptoken, // Still need appToken here to target the device
-          });
-        }
+      if (needsNotification) {
+        usersToNotify.push({
+          userId: user._id,
+          appToken: user.apptoken,
+        });
       }
     }
 
@@ -398,8 +347,7 @@ const checkAndNotifyLateCheckinsLogic = async () => {
           userId: String(user.userId),
         },
       };
-      // MODIFIED: Removed appToken from parameters passed to sendFCMNotification
-      return sendFCMNotification(user.appToken, message, user.userId, null); // topic is null for direct token
+      return sendFCMNotification(user.appToken, message, user.userId, null);
     });
 
     const results = await Promise.allSettled(notificationPromises);
@@ -433,7 +381,6 @@ const checkAndNotifyLateCheckinsLogic = async () => {
   }
 };
 
-// --- NEW ROUTE: Identify and Notify Late Check-ins (now calls the encapsulated logic) ---
 app.post("/api/check-and-notify-late-checkins", async (req, res) => {
   const result = await checkAndNotifyLateCheckinsLogic();
   if (result.error) {
@@ -459,105 +406,70 @@ const sendFollowupAndAppointmentRemindersLogic = async () => {
     const tomorrowIST = new Date(todayIST);
     tomorrowIST.setDate(tomorrowIST.getDate() + 1);
 
-    const userModels = [bdeModel, telecallerModel, digitalMarketerModel];
-    const userTypeMap = {
-      bde: bdeModel,
-      telecaller: telecallerModel,
-      digitalMarketer: digitalMarketerModel,
-    };
-
-    // An array to collect all the notification promises
     const notificationPromises = [];
 
-    // --- New: Iterate through each user type and fetch their assignments ---
-    for (const Model of userModels) {
-      const users = await Model.find({
-        status: "active",
-        apptoken: { $exists: true },
+    const users = await User.find({
+      designation: { $in: ["BDE", "Telecaller", "DigitalMarketer"] },
+      status: "active",
+      apptoken: { $exists: true },
+    });
+
+    for (const user of users) {
+      let filter = {
+        $and: [
+          {
+            $or: [
+              { followUpDate: { $gte: todayIST, $lt: tomorrowIST } },
+              { appointmentDate: { $gte: todayIST, $lt: tomorrowIST } },
+            ],
+          },
+          {
+            $or: [
+              { status: "Followup" },
+              { "visit_result.reason": "Followup" },
+              { status: "Appointment Generated" },
+            ],
+          },
+        ],
+      };
+
+      // Use a consistent field name for user assignment, for example, `assignedUser`
+      // Or, if you need to use the `designation` as part of the filter, you can.
+      // Assuming a `userId` field on the businessModel that stores the _id of the assigned user.
+      filter.$and.push({ userId: user._id });
+
+      const followupCount = await businessModel.countDocuments({
+        ...filter,
+        $and: [
+          ...filter.$and,
+          {
+            $or: [
+              { status: "Followup" },
+              { "visit_result.reason": "Followup" },
+            ],
+          },
+        ],
       });
 
-      for (const user of users) {
-        let assignedCategories = [];
-        let assignedCities = [];
-        let filter = {
-          $and: [
-            {
-              $or: [
-                { followUpDate: { $gte: todayIST, $lt: tomorrowIST } },
-                { appointmentDate: { $gte: todayIST, $lt: tomorrowIST } },
-              ],
-            },
-            {
-              $or: [
-                { status: "Followup" },
-                { "visit_result.reason": "Followup" },
-                { status: "Appointment Generated" },
-              ],
-            },
-          ],
+      const appointmentCount = await businessModel.countDocuments({
+        ...filter,
+        $and: [...filter.$and, { status: "Appointment Generated" }],
+      });
+
+      if (followupCount > 0 || appointmentCount > 0) {
+        const body = `You have ${followupCount} follow-ups and ${appointmentCount} appointments scheduled for today.`;
+        const message = {
+          notification: { title: notificationTitle, body: body },
+          data: {
+            type: "followup_appointment_reminder",
+            followups: String(followupCount),
+            appointments: String(appointmentCount),
+            userId: String(user._id),
+          },
         };
-
-        // Get user's specific assignments
-        if (user.assignCategories && Array.isArray(user.assignCategories)) {
-          assignedCategories = user.assignCategories.map((c) =>
-            c.category.trim()
-          );
-        }
-        if (user.assignCities && Array.isArray(user.assignCities)) {
-          assignedCities = user.assignCities.map((c) => c.city.trim());
-        }
-
-        // Add the user-specific filters to the query
-        if (assignedCategories.length > 0) {
-          filter.$and.push({ category: { $in: assignedCategories } });
-        }
-        if (assignedCities.length > 0) {
-          filter.$and.push({ city: { $in: assignedCities } });
-        }
-
-        // --- New: Use user's ID for specific filtering ---
-        const userIdField = user.bdeId
-          ? "bdeId"
-          : user.telecallerId
-          ? "telecallerId"
-          : "digitalMarketerId";
-        filter.$and.push({ [userIdField]: user[userIdField] });
-
-        // Count relevant businesses for THIS specific user
-        const followupCount = await businessModel.countDocuments({
-          ...filter,
-          $and: [
-            ...filter.$and,
-            {
-              $or: [
-                { status: "Followup" },
-                { "visit_result.reason": "Followup" },
-              ],
-            },
-          ],
-        });
-
-        const appointmentCount = await businessModel.countDocuments({
-          ...filter,
-          $and: [...filter.$and, { status: "Appointment Generated" }],
-        });
-
-        // If there are any businesses to follow up on, send the notification
-        if (followupCount > 0 || appointmentCount > 0) {
-          const body = `You have ${followupCount} follow-ups and ${appointmentCount} appointments scheduled for today.`;
-          const message = {
-            notification: { title: notificationTitle, body: body },
-            data: {
-              type: "followup_appointment_reminder",
-              followups: String(followupCount),
-              appointments: String(appointmentCount),
-              userId: String(user._id),
-            },
-          };
-          notificationPromises.push(
-            sendFCMNotification(user.apptoken, message, user._id, null)
-          );
-        }
+        notificationPromises.push(
+          sendFCMNotification(user.apptoken, message, user._id, null)
+        );
       }
     }
 
