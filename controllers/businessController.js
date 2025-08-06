@@ -119,6 +119,8 @@ exports.getBusiness = async (req, res) => {
       appointmentenddate,
       createdstartdate,
       createdenddate,
+      visitdatestart,
+      visitdateend,
       businessname,
       sortBy,
       sortOrder = "desc",
@@ -247,10 +249,15 @@ exports.getBusiness = async (req, res) => {
         appointmentenddate
       ),
       applyDateRangeFilter("createdAt", createdstartdate, createdenddate),
+      applyDateRangeFilter(
+        "visit_result.visitDate",
+        visitdatestart,
+        visitdateend
+      ),
     ].filter(Boolean);
 
     if (dateFilters.length > 0) {
-      findFilter.$and = dateFilters;
+      findFilter.$or = dateFilters;
     }
 
     // --- Dynamic Sorting ---
