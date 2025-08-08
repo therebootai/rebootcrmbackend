@@ -82,10 +82,6 @@ businessSchema.pre("save", function (next) {
   if (!this.created_by) {
     this.created_by = new mongoose.Types.ObjectId("66ffbdc11c350a415864d493");
   }
-  next();
-});
-
-businessSchema.pre("save", function (next) {
   if (this.visit_result && this.visit_result.visit_time) {
     const visitTimeStr = this.visit_result.visit_time;
     const parsedDate = moment(visitTimeStr, "DD/MM/YYYY, h:mm:ss a").toDate();

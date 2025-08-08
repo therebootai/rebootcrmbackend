@@ -914,7 +914,7 @@ exports.getUserAnalytics = async (req, res) => {
                   ...(dateRangeConditions.start
                     ? [
                         {
-                          createdAt: {
+                          "visit_result.visitDate": {
                             $gte: dateRangeConditions.start,
                             $lte: dateRangeConditions.end,
                           },

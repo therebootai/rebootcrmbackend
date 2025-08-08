@@ -131,8 +131,8 @@ exports.getBusiness = async (req, res) => {
     const page = parseInt(req.query.page) > 0 ? parseInt(req.query.page) : 1;
     const skip = (page - 1) * limit;
 
-    // The main filter object to be built
-    const findFilter = {};
+    // Initialize an array to hold all individual filter conditions
+    const conditions = [];
 
     // --- Helper to Parse and Validate Multiple Object IDs ---
     const parseAndValidateObjectIds = (paramValue) => {
@@ -173,39 +173,45 @@ exports.getBusiness = async (req, res) => {
       createdBy ? resolveUser(createdBy) : Promise.resolve(null),
     ]);
 
-    // --- Build the main filter object ---
+    // --- Build the filter conditions array ---
 
     if (search) {
       const searchRegex = new RegExp(search, "i");
-      findFilter.$or = [
-        { buisnessname: searchRegex },
-        { contactpersonName: searchRegex },
-        { mobileNumber: searchRegex },
-        { remarks: searchRegex },
-      ];
+      conditions.push({
+        $or: [
+          { buisnessname: searchRegex },
+          { contactpersonName: searchRegex },
+          { mobileNumber: searchRegex },
+          { remarks: searchRegex },
+        ],
+      });
     }
 
     if (mobileNumber) {
-      findFilter.mobileNumber = { $regex: mobileNumber, $options: "i" };
+      conditions.push({
+        mobileNumber: { $regex: mobileNumber, $options: "i" },
+      });
     }
     if (businessname) {
-      findFilter.buisnessname = { $regex: businessname, $options: "i" };
+      conditions.push({
+        buisnessname: { $regex: businessname, $options: "i" },
+      });
     }
 
     // Explicit ID-based filters
     const cityIds = parseAndValidateObjectIds(city);
-    if (cityIds) findFilter.city = cityIds;
+    if (cityIds) conditions.push({ city: cityIds });
 
     const categoryIds = parseAndValidateObjectIds(category);
-    if (categoryIds) findFilter.category = categoryIds;
+    if (categoryIds) conditions.push({ category: categoryIds });
 
     const sourceIds = parseAndValidateObjectIds(source);
-    if (sourceIds) findFilter.source = sourceIds;
+    if (sourceIds) conditions.push({ source: sourceIds });
 
     // User-based filters
-    if (assignedToUser) findFilter.appoint_to = assignedToUser._id;
-    if (leadByUser) findFilter.lead_by = leadByUser._id;
-    if (createdByUser) findFilter.created_by = createdByUser._id;
+    if (assignedToUser) conditions.push({ appoint_to: assignedToUser._id });
+    if (leadByUser) conditions.push({ lead_by: leadByUser._id });
+    if (createdByUser) conditions.push({ created_by: createdByUser._id });
 
     // Status filter with special handling for 'visit_result.reason'
     if (status) {
@@ -216,13 +222,11 @@ exports.getBusiness = async (req, res) => {
         "Visited",
       ];
       if (statusesToIncludeReason.includes(status)) {
-        findFilter.$or = findFilter.$or || []; // Ensure $or array exists
-        findFilter.$or.push(
-          { status: status },
-          { "visit_result.reason": status }
-        );
+        conditions.push({
+          $or: [{ status: status }, { "visit_result.reason": status }],
+        });
       } else {
-        findFilter.status = status;
+        conditions.push({ status: status });
       }
     }
 
@@ -241,24 +245,36 @@ exports.getBusiness = async (req, res) => {
       return null;
     };
 
-    const dateFilters = [
-      applyDateRangeFilter("followUpDate", followupstartdate, followupenddate),
-      applyDateRangeFilter(
-        "appointmentDate",
-        appointmentstartdate,
-        appointmentenddate
-      ),
-      applyDateRangeFilter("createdAt", createdstartdate, createdenddate),
-      applyDateRangeFilter(
-        "visit_result.visitDate",
-        visitdatestart,
-        visitdateend
-      ),
-    ].filter(Boolean);
+    const followupDateFilter = applyDateRangeFilter(
+      "followUpDate",
+      followupstartdate,
+      followupenddate
+    );
+    if (followupDateFilter) conditions.push(followupDateFilter);
 
-    if (dateFilters.length > 0) {
-      findFilter.$or = dateFilters;
-    }
+    const appointmentDateFilter = applyDateRangeFilter(
+      "appointmentDate",
+      appointmentstartdate,
+      appointmentenddate
+    );
+    if (appointmentDateFilter) conditions.push(appointmentDateFilter);
+
+    const createdDateFilter = applyDateRangeFilter(
+      "createdAt",
+      createdstartdate,
+      createdenddate
+    );
+    if (createdDateFilter) conditions.push(createdDateFilter);
+
+    const visitDateFilter = applyDateRangeFilter(
+      "visit_result.visitDate",
+      visitdatestart,
+      visitdateend
+    );
+    if (visitDateFilter) conditions.push(visitDateFilter);
+
+    // Construct the final findFilter using $and if there are conditions
+    const finalFindFilter = conditions.length > 0 ? { $and: conditions } : {};
 
     // --- Dynamic Sorting ---
     let sort = { createdAt: -1 };
@@ -280,7 +296,7 @@ exports.getBusiness = async (req, res) => {
     // --- Fetch Businesses and Counts ---
     const [businesses, filteredBusinessesCount] = await Promise.all([
       business
-        .find(findFilter)
+        .find(finalFindFilter) // Use the constructed finalFindFilter
         .populate("city", "cityname")
         .populate("category", "categoryname")
         .populate("source", "sourcename")
@@ -290,34 +306,55 @@ exports.getBusiness = async (req, res) => {
         .sort(sort)
         .skip(skip)
         .limit(limit),
-      business.countDocuments(findFilter), // Use the same filter for counting
+      business.countDocuments(finalFindFilter), // Use the same filter for counting
     ]);
 
     const grandTotalBusinesses = await business.countDocuments({});
     const totalPages = Math.ceil(filteredBusinessesCount / limit);
 
-    // --- Status Counts (based on the common 'findFilter') ---
+    // Helper to combine a base filter with an additional condition
+    const combineFilters = (baseFilter, additionalCondition) => {
+      // If the base filter is empty, just return the additional condition
+      if (Object.keys(baseFilter).length === 0) {
+        return additionalCondition;
+      }
+
+      // If baseFilter already has an $and, add the additionalCondition to its $and array
+      if (baseFilter.$and) {
+        return { $and: [...baseFilter.$and, additionalCondition] };
+      } else {
+        // If baseFilter has other conditions (not an $and), combine them with a new $and
+        return { $and: [baseFilter, additionalCondition] };
+      }
+    };
+
+    // --- Status Counts (based on the common 'finalFindFilter' and specific status conditions) ---
     const [followupCount, appointmentCount, dealCloseCount, visitCount] =
       await Promise.all([
-        business.countDocuments({
-          ...findFilter,
-          $or: [{ status: "Followup" }, { "visit_result.reason": "Followup" }],
-        }),
-        business.countDocuments({
-          ...findFilter,
-          status: "Appointment Generated",
-        }),
-        business.countDocuments({
-          ...findFilter,
-          $or: [
-            { status: "Deal Closed" },
-            { "visit_result.reason": "Deal Closed" },
-          ],
-        }),
-        business.countDocuments({
-          ...findFilter,
-          status: "Visited",
-        }),
+        business.countDocuments(
+          combineFilters(finalFindFilter, {
+            $or: [
+              { status: "Followup" },
+              { "visit_result.reason": "Followup" },
+            ],
+          })
+        ),
+        business.countDocuments(
+          combineFilters(finalFindFilter, { status: "Appointment Generated" })
+        ),
+        business.countDocuments(
+          combineFilters(finalFindFilter, {
+            $or: [
+              { status: "Deal Closed" },
+              { "visit_result.reason": "Deal Closed" },
+            ],
+          })
+        ),
+        business.countDocuments(
+          combineFilters(finalFindFilter, {
+            $or: [{ status: "Visited" }, { "visit_result.reason": "Visited" }],
+          })
+        ),
       ]);
 
     res.status(200).json({
@@ -343,6 +380,267 @@ exports.getBusiness = async (req, res) => {
     });
   }
 };
+
+// exports.getBusiness = async (req, res) => {
+//   try {
+//     const {
+//       search,
+//       mobileNumber,
+//       city,
+//       category,
+//       status,
+//       source,
+//       assignedTo,
+//       leadBy,
+//       createdBy,
+//       followupstartdate,
+//       followupenddate,
+//       appointmentstartdate,
+//       appointmentenddate,
+//       createdstartdate,
+//       createdenddate,
+//       visitdatestart,
+//       visitdateend,
+//       businessname,
+//       sortBy,
+//       sortOrder = "desc",
+//     } = req.query;
+
+//     const limit =
+//       parseInt(req.query.limit) > 0 ? parseInt(req.query.limit) : 20;
+//     const page = parseInt(req.query.page) > 0 ? parseInt(req.query.page) : 1;
+//     const skip = (page - 1) * limit;
+
+//     // The main filter object to be built
+//     const findFilter = {};
+
+//     // --- Helper to Parse and Validate Multiple Object IDs ---
+//     const parseAndValidateObjectIds = (paramValue) => {
+//       if (!paramValue) return null;
+//       const ids = (
+//         Array.isArray(paramValue) ? paramValue : paramValue.split(",")
+//       )
+//         .map((id) => id.trim())
+//         .filter((id) => mongoose.Types.ObjectId.isValid(id))
+//         .map((id) => new mongoose.Types.ObjectId(id));
+//       return ids.length > 0 ? { $in: ids } : null;
+//     };
+
+//     // --- User Resolution Helper (for assignedTo, leadBy, createdBy) ---
+//     const resolvedUserIdsCache = {};
+//     const resolveUser = async (paramValue) => {
+//       if (!paramValue) return null;
+//       if (resolvedUserIdsCache[paramValue])
+//         return resolvedUserIdsCache[paramValue];
+//       let user = null;
+//       if (mongoose.Types.ObjectId.isValid(paramValue)) {
+//         user = await User.findById(paramValue);
+//       }
+//       if (!user) {
+//         user = await User.findOne({ userId: paramValue });
+//       }
+//       if (user) {
+//         resolvedUserIdsCache[paramValue] = user;
+//         return user;
+//       }
+//       return null;
+//     };
+
+//     // --- Resolve user IDs upfront to use them in the filter ---
+//     const [assignedToUser, leadByUser, createdByUser] = await Promise.all([
+//       assignedTo ? resolveUser(assignedTo) : Promise.resolve(null),
+//       leadBy ? resolveUser(leadBy) : Promise.resolve(null),
+//       createdBy ? resolveUser(createdBy) : Promise.resolve(null),
+//     ]);
+
+//     // --- Build the main filter object ---
+
+//     if (search) {
+//       const searchRegex = new RegExp(search, "i");
+//       findFilter.$or = [
+//         { buisnessname: searchRegex },
+//         { contactpersonName: searchRegex },
+//         { mobileNumber: searchRegex },
+//         { remarks: searchRegex },
+//       ];
+//     }
+
+//     if (mobileNumber) {
+//       findFilter.mobileNumber = { $regex: mobileNumber, $options: "i" };
+//     }
+//     if (businessname) {
+//       findFilter.buisnessname = { $regex: businessname, $options: "i" };
+//     }
+
+//     // Explicit ID-based filters
+//     const cityIds = parseAndValidateObjectIds(city);
+//     if (cityIds) findFilter.city = cityIds;
+
+//     const categoryIds = parseAndValidateObjectIds(category);
+//     if (categoryIds) findFilter.category = categoryIds;
+
+//     const sourceIds = parseAndValidateObjectIds(source);
+//     if (sourceIds) findFilter.source = sourceIds;
+
+//     // User-based filters
+//     if (assignedToUser) findFilter.appoint_to = assignedToUser._id;
+//     if (leadByUser) findFilter.lead_by = leadByUser._id;
+//     if (createdByUser) findFilter.created_by = createdByUser._id;
+
+//     // Status filter with special handling for 'visit_result.reason'
+//     if (status) {
+//       const statusesToIncludeReason = [
+//         "Followup",
+//         "Not Interested",
+//         "Deal Closed",
+//         "Visited",
+//       ];
+//       if (statusesToIncludeReason.includes(status)) {
+//         findFilter.$or = findFilter.$or || []; // Ensure $or array exists
+//         findFilter.$or.push(
+//           { status: status },
+//           { "visit_result.reason": status }
+//         );
+//       } else {
+//         findFilter.status = status;
+//       }
+//     }
+
+//     // Date Range filters
+//     const applyDateRangeFilter = (field, startDate, endDate) => {
+//       if (startDate || endDate) {
+//         const dateRange = {};
+//         if (startDate) dateRange.$gte = new Date(startDate);
+//         if (endDate) {
+//           const endOfDay = new Date(endDate);
+//           endOfDay.setUTCHours(23, 59, 59, 999);
+//           dateRange.$lte = endOfDay;
+//         }
+//         return { [field]: dateRange };
+//       }
+//       return null;
+//     };
+
+//     const followupDateFilter = applyDateRangeFilter(
+//       "followUpDate",
+//       followupstartdate,
+//       followupenddate
+//     );
+//     if (followupDateFilter) {
+//       findFilter.followUpDate = followupDateFilter.followUpDate;
+//     }
+
+//     const appointmentDateFilter = applyDateRangeFilter(
+//       "appointmentDate",
+//       appointmentstartdate,
+//       appointmentenddate
+//     );
+//     if (appointmentDateFilter) {
+//       findFilter.appointmentDate = appointmentDateFilter.appointmentDate;
+//     }
+
+//     const createdDateFilter = applyDateRangeFilter(
+//       "createdAt",
+//       createdstartdate,
+//       createdenddate
+//     );
+//     if (createdDateFilter) {
+//       findFilter.createdAt = createdDateFilter.createdAt;
+//     }
+
+//     const visitDateFilter = applyDateRangeFilter(
+//       "visit_result.visitDate",
+//       visitdatestart,
+//       visitdateend
+//     );
+//     if (visitDateFilter) {
+//       findFilter["visit_result.visitDate"] =
+//         visitDateFilter["visit_result.visitDate"];
+//     }
+
+//     // --- Dynamic Sorting ---
+//     let sort = { createdAt: -1 };
+//     if (sortBy) {
+//       const order = sortOrder.toLowerCase() === "asc" ? 1 : -1;
+//       const allowedSortFields = [
+//         "buisnessname",
+//         "mobileNumber",
+//         "createdAt",
+//         "appointmentDate",
+//         "followUpDate",
+//         "status",
+//       ];
+//       if (allowedSortFields.includes(sortBy)) {
+//         sort = { [sortBy]: order };
+//       }
+//     }
+
+//     // --- Fetch Businesses and Counts ---
+//     const [businesses, filteredBusinessesCount] = await Promise.all([
+//       business
+//         .find(findFilter)
+//         .populate("city", "cityname")
+//         .populate("category", "categoryname")
+//         .populate("source", "sourcename")
+//         .populate("lead_by", "name userId")
+//         .populate("appoint_to", "name userId")
+//         .populate("created_by", "name userId")
+//         .sort(sort)
+//         .skip(skip)
+//         .limit(limit),
+//       business.countDocuments(findFilter), // Use the same filter for counting
+//     ]);
+
+//     const grandTotalBusinesses = await business.countDocuments({});
+//     const totalPages = Math.ceil(filteredBusinessesCount / limit);
+
+//     // --- Status Counts (based on the common 'findFilter') ---
+//     const [followupCount, appointmentCount, dealCloseCount, visitCount] =
+//       await Promise.all([
+//         business.countDocuments({
+//           ...findFilter,
+//           $or: [{ status: "Followup" }, { "visit_result.reason": "Followup" }],
+//         }),
+//         business.countDocuments({
+//           ...findFilter,
+//           status: "Appointment Generated",
+//         }),
+//         business.countDocuments({
+//           ...findFilter,
+//           $or: [
+//             { status: "Deal Closed" },
+//             { "visit_result.reason": "Deal Closed" },
+//           ],
+//         }),
+//         business.countDocuments({
+//           ...findFilter,
+//           status: "Visited",
+//         }),
+//       ]);
+
+//     res.status(200).json({
+//       success: true,
+//       businesses,
+//       totalPages,
+//       currentPage: page,
+//       totalCount: filteredBusinessesCount,
+//       statusCount: {
+//         grandTotalBusinesses,
+//         FollowupCount: followupCount,
+//         appointmentCount,
+//         visitCount,
+//         dealCloseCount,
+//       },
+//     });
+//   } catch (error) {
+//     console.error("Error fetching businesses:", error);
+//     res.status(500).json({
+//       success: false,
+//       message: "Error fetching businesses",
+//       error: error.message,
+//     });
+//   }
+// };
 
 // exports.getBusiness = async (req, res) => {
 //   try {
