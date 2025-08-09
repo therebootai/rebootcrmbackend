@@ -1,3 +1,4 @@
+const moment = require("moment");
 const mongoose = require("mongoose");
 const Schema = mongoose.Schema;
 
@@ -61,6 +62,7 @@ const businessSchema = new Schema(
       reason: { type: String },
       follow_up_date: { type: Date },
       visit_time: { type: String },
+      visitDate: { type: Date },
       update_location: {
         latitude: { type: String },
         longitude: { type: String },
@@ -79,6 +81,11 @@ businessSchema.pre("save", function (next) {
   // Only generate a slug if it's not already set and if blogTitle is present
   if (!this.created_by) {
     this.created_by = new mongoose.Types.ObjectId("66ffbdc11c350a415864d493");
+  }
+  if (this.visit_result && this.visit_result.visit_time) {
+    const visitTimeStr = this.visit_result.visit_time;
+    const parsedDate = moment(visitTimeStr, "DD/MM/YYYY, h:mm:ss a").toDate();
+    this.visit_result.visitDate = parsedDate;
   }
   next();
 });
