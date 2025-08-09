@@ -1034,29 +1034,38 @@ exports.getUserAnalytics = async (req, res) => {
       };
 
       const filterTargetsByDate = (targets, startDate, endDate) => {
-        if (!startDate || !endDate) return targets;
+        if (!targets || !startDate || !endDate) {
+          return targets;
+        }
 
-        const startMonthIndex = startDate.getMonth();
-        const startYear = startDate.getFullYear();
-        const endMonthIndex = endDate.getMonth();
-        const endYear = endDate.getFullYear();
+        // Ensure startDate and endDate are valid Date objects
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+
+        if (isNaN(start) || isNaN(end)) {
+          console.error(
+            "Invalid start or end date provided to filterTargetsByDate"
+          );
+          return targets;
+        }
 
         return targets.filter((target) => {
-          if (typeof target.month !== "string") return false;
+          // Check for valid month and year properties
+          if (
+            typeof target.month !== "string" ||
+            typeof target.year !== "number"
+          ) {
+            return false;
+          }
+
+          // Construct a Date object for the target month and year
           const targetMonthIndex = monthMap[target.month];
           if (targetMonthIndex === undefined) return false;
 
-          const targetYear = target.year;
+          const targetDate = new Date(target.year, targetMonthIndex, 1);
 
-          // Check if target's month/year is within the range
-          const isAfterStart =
-            targetYear > startYear ||
-            (targetYear === startYear && targetMonthIndex >= startMonthIndex);
-          const isBeforeEnd =
-            targetYear < endYear ||
-            (targetYear === endYear && targetMonthIndex <= endMonthIndex);
-
-          return isAfterStart && isBeforeEnd;
+          // Perform the direct date comparison
+          return targetDate >= start && targetDate <= end;
         });
       };
 
@@ -1105,6 +1114,7 @@ exports.getUserAnalytics = async (req, res) => {
       let absentCount = 0;
       let leaveCount = 0;
       let totalDayCount = 0;
+      let allAttendance = [];
 
       let filteredAttendance = userData.attendence_list;
       if (start_date && end_date) {
@@ -1122,6 +1132,7 @@ exports.getUserAnalytics = async (req, res) => {
         if (att.status === "present") presentCount++;
         else if (att.status === "absent") absentCount++;
         else if (att.status === "leave") leaveCount++;
+        allAttendance.push(att);
       });
 
       userAnalytics.attendance = {
@@ -1129,6 +1140,7 @@ exports.getUserAnalytics = async (req, res) => {
         absent: absentCount,
         leave: leaveCount,
         totalDayCount,
+        allAttendance,
       };
     }
 
