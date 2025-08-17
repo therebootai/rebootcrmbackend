@@ -167,7 +167,7 @@ exports.getClients = async (req, res) => {
             { $limit: limitNumber },
             {
               $lookup: {
-                from: "bdes",
+                from: "users",
                 localField: "bdeName",
                 foreignField: "_id",
                 as: "bdeName",
@@ -176,7 +176,7 @@ exports.getClients = async (req, res) => {
             { $unwind: { path: "$bdeName", preserveNullAndEmptyArrays: true } },
             {
               $lookup: {
-                from: "telecallers",
+                from: "users",
                 localField: "tmeLeads",
                 foreignField: "_id",
                 as: "tmeLeads",
