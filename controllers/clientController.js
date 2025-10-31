@@ -250,7 +250,7 @@ exports.getCollectionSummary = async (req, res) => {
         cleardAmount: 1,
         monthlyPaymentAmount: 1,
       }
-    );
+    ).sort({ expiryDate: -1 });
 
     const summary = {};
 
