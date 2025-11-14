@@ -147,6 +147,13 @@ exports.getClients = async (req, res) => {
       });
     }
 
+
+    const now = new Date();
+    const todayStart = new Date(now);
+todayStart.setHours(0, 0, 0, 0);
+
+const todayEnd = new Date(now);
+todayEnd.setHours(23, 59, 59, 999);
     const pipeline = [
       {
         $lookup: {
@@ -160,28 +167,55 @@ exports.getClients = async (req, res) => {
       { $match: matchStage },
       ...searchStage,
       // Add fields to calculate days difference and sort by nearest expiry date
-      {
-        $addFields: {
-          // Calculate the difference in days between expiryDate and today
-          daysUntilExpiry: {
-            $divide: [
-              { $subtract: ["$expiryDate", new Date()] }, // Difference in milliseconds
-              1000 * 60 * 60 * 24, // Convert to days
+      
+    {
+  $addFields: {
+    daysUntilExpiry: {
+      $divide: [
+        { $subtract: ["$expiryDate", now] },
+        1000 * 60 * 60 * 24,
+      ],
+    },
+    absDaysUntilExpiry: {
+      $abs: {
+        $divide: [
+          { $subtract: ["$expiryDate", now] },
+          1000 * 60 * 60 * 24,
+        ],
+      },
+    },
+  },
+},
+  {
+    $addFields: {
+      daysUntilExpiry: {
+        $divide: [
+          { $subtract: ["$expiryDate", now] },
+          1000 * 60 * 60 * 24,
+        ],
+      },
+      sortGroup: {
+        $cond: [
+          {
+            $and: [
+              { $gte: ["$expiryDate", todayStart] },
+              { $lte: ["$expiryDate", todayEnd] },
             ],
           },
-          // Absolute value to get how close it is (regardless of past/future)
-          daysDifference: {
-            $abs: {
-              $divide: [
-                { $subtract: ["$expiryDate", new Date()] },
-                1000 * 60 * 60 * 24,
-              ],
-            },
+          0,
+          {
+            $cond: [
+              { $gt: ["$expiryDate", todayEnd] },
+              1,
+              2,
+            ],
           },
-        },
+        ],
       },
-      // Sort by nearest expiry date first
-      { $sort: { daysDifference: 1, createdAt: -1 } },
+    },
+  },
+  { $sort: { sortGroup: 1, daysUntilExpiry: 1, createdAt: -1 } },
+
       {
         $facet: {
           data: [
