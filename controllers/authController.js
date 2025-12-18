@@ -132,13 +132,13 @@ exports.sendOtp = async (req, res) => {
     };
 
     const payload = {
-      "auth-key": "aa61059c453fd7b25e02a9dec860e9c4e23834a61d1d26de4b",
-      "app-key": "0f71de7c-53dc-4793-9469-96356a6a2e4a",
+        "auth-key": process.env.WAPP_AUTH_KEY,
+      "app-key": process.env.WAPP_APP_KEY,
       destination_number: formattedPhone,
-      template_id: "554597174279371",
-      device_id: "67599f6c1c50a6c971f41728",
+      template_id: "1141880114425036",
+      device_id: process.env.WAPP_DEVICE_ID,
       language: "en",
-      variables: [name.toString(), otpCode.toString()],
+      variables: [ otpCode.toString()],
     };
 
     const response = await axios.post(
